@@ -1,0 +1,10 @@
+name: snowflake_env
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - streamlit
+      - matplotlib
+      - pandas
+      - numpy
+      - plotly
