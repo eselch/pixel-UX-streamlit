@@ -13,6 +13,9 @@ Returns:
 """
 from typing import List, Optional, Tuple
 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for Snowflake/server environments
+
 import numpy as np
 import streamlit as st
 import matplotlib.pyplot as plt
