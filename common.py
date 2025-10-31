@@ -97,7 +97,7 @@ def render_dual_column_headers(left_header: str = "Left", right_header: str = "R
     Returns:
         tuple: (col_left, col_right) for use with context managers
     """
-    col_left, _, col_right = st.columns([3, 1, 3])
+    col_left, _, col_right = st.columns([4, 1, 4])
     
     with col_left:
         _, col_center_left, _ = st.columns([1, 2, 1])
