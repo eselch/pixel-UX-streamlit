@@ -1,5 +1,7 @@
 import streamlit as st
 import common as ui
+import sys
+import pkg_resources
 
 ui.apply_base_ui("Get Started")
 
