@@ -10,7 +10,7 @@ def apply_base_ui(title: str = ""):
     page_title = title if title else "Survey App"
     st.set_page_config(page_title=page_title, layout="wide")
 
-    # logo (top-left) — optional, ignore errors if missing
+    # logo (top-right) — optional, ignore errors if missing
     try:
         st.image("primary-logo.svg", width=110, caption=None)
     except Exception:
@@ -23,8 +23,8 @@ def apply_base_ui(title: str = ""):
     st.markdown("""
     <style>
         .stButton > button {
-            background-color: #0492a8 !important;
-            color: white !important;
+            background-color: #F0F2F6 !important;
+            color: #6e6f72 !important;
             border: none !important;
             padding: 10px 20px !important;
             border-radius: 0px !important;
@@ -33,55 +33,43 @@ def apply_base_ui(title: str = ""):
         }
         .stButton > button:hover {
             background-color: #036d7c !important;
+            color: white !important;
         }
         .stButton > button:active {
             background-color: #025763 !important;
+            color: white !important;
         }
         body, p, span, div {
             font-size: 16px !important;
+            font-weight: 350 !important;
+
         }
         h1 {
             font-size: 40px !important;
-            margin-bottom: 0.5rem !important;
+            margin-bottom: 0.1rem !important;
+            font-weight: 250 !important;
         }
         h2 {
-            font-size: 28px !important;
+            font-size: 20px !important;
             margin-bottom: 0.5rem !important;
+            font-weight: 700 !important;
+            text-align: center !important;
         }
         h3 {
             font-size: 20px !important;
+            font-weight: 350 !important;
         }
     </style>
     """, unsafe_allow_html=True)
 
 def is_dual_survey():
-    """Check if user entered data in both left and right profiles."""
+    """Check if user entered data in both sleeper profiles."""
     answers = st.session_state.get("answers", {})
-    left_data = answers.get("left", {})
-    right_data = answers.get("right", {})
+    sleeper_1_data = answers.get("sleeper_1", {})
+    sleeper_2_data = answers.get("sleeper_2", {})
     
-    # If right column has any non-empty data, it's a dual survey
-    return bool(right_data) and any(right_data.values())
-
-def render_survey_questions(side_key: str):
-    """Render survey questions for a given side (left or right).
-    
-    Args:
-        side_key: "left" or "right" - used for session_state and widget keys
-    """
-    st.subheader("1) Configuration Setting 1")
-    st.session_state.answers[side_key]["setting1"] = st.radio(
-        "Select one:", 
-        ["Option A", "Option B", "Option C", "Option D", "Option E"],
-        index=2,
-        label_visibility="collapsed",
-        key=f"{side_key}_setting1"
-    )
-    
-    st.subheader("2) Configuration Setting 2")
-    st.session_state.answers[side_key]["setting2"] = st.slider(
-        "Scale from 0 to 10", 0, 10, 5, key=f"{side_key}_setting2_slider", label_visibility="collapsed"
-    )
+    # If sleeper_2 column has any non-empty data, it's a dual survey
+    return bool(sleeper_2_data) and any(sleeper_2_data.values())
 
 def nav_row(left_label=None, left_action=None, right_label=None, right_action=None):
     """Draw a two-button row at the bottom-ish area."""
@@ -98,3 +86,27 @@ def nav_row(left_label=None, left_action=None, right_label=None, right_action=No
             if right_label and st.button(right_label, key=f"next_{right_label}"):
                 if right_action:
                     right_action()
+
+def render_dual_column_headers(left_header: str = "Left", right_header: str = "Right"):
+    """Render centered headers in dual columns (left and right).
+    
+    Args:
+        left_header: Header text for left column
+        right_header: Header text for right column
+    
+    Returns:
+        tuple: (col_left, col_right) for use with context managers
+    """
+    col_left, _, col_right = st.columns([3, 1, 3])
+    
+    with col_left:
+        _, col_center_left, _ = st.columns([1, 2, 1])
+        with col_center_left:
+            st.header(left_header)
+    
+    with col_right:
+        _, col_center_right, _ = st.columns([1, 2, 1])
+        with col_center_right:
+            st.header(right_header)
+    
+    return col_left, col_right
