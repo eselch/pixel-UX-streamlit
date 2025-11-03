@@ -1,11 +1,10 @@
 name: snowflake_env
+channels:
+  - snowflake
+  - defaults
 dependencies:
   - python=3.10
-  - pip
-  - pip:
-      - streamlit>=1.20
-      - matplotlib>=3.4
-      - pandas>=1.0
-      - numpy>=1.21
-      - plotly>=5.0
-      - Pillow>=9.0
+  - streamlit
+  - matplotlib
+  - numpy
+  - pandas
