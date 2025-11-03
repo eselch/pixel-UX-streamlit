@@ -1,7 +1,6 @@
 name: snowflake_env
 channels:
   - snowflake
-  - defaults
 dependencies:
   - python=3.10
   - streamlit
