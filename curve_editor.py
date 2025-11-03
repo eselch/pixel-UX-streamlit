@@ -15,6 +15,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import streamlit as st
+import plotly.graph_objects as go
 
 
 def _clamp_values(arr: np.ndarray, vmin: int = 0, vmax: int = 255) -> np.ndarray:
@@ -93,10 +94,6 @@ def show_curve_editor(
     -------
     list of ints: sampled values length sample_count saved to st.session_state[f"{key}_lut"]
     """
-    import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend for Snowflake/server environments
-    import matplotlib.pyplot as plt
-    
     xmin, xmax = x_domain
     vmin, vmax = value_range
 
@@ -187,30 +184,53 @@ def show_curve_editor(
     # Save LUT into session state
     st.session_state[lut_key] = y_samples.tolist()
 
-    # Plot the curve and control points
+    # Plot the curve and control points using Plotly
     with col_plot:
-        fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
-        # plot smooth curve from dense samples
-        ax.plot(plot_x, plot_y, color="#0492a8", linewidth=2)
-        # control points use primary teal color
-        ax.scatter(xs, ys, color="#0492a8", s=80, zorder=5)
-        # axis limits and ticks — Y limited to integer ticks between vmin..vmax
-        # expand x-limits by 0.5 so half-integer centered labels are visible
-        ax.set_xlim(xmin - 0.5, xmax + 0.5)
-        ax.set_ylim(vmin, vmax)
-        ax.set_yticks(np.arange(int(vmin), int(vmax) + 1, 1))
-
-        label_names = [str(int(t)) for t in range(int(xmin), int(xmax) + 1)]
+        fig = go.Figure()
         
-        ax.set_xticks(np.linspace(int(xmin), int(xmax), num=len(label_names)))
-        ax.set_xticklabels(label_names)
-        ax.set_xlabel("Rows")
-        ax.set_ylabel("Firmness Level")
-        ax.set_title("Firmness Profile")
-        ax.grid(axis='y', which='major', alpha=0.35)
-        ax.grid(axis='x', which='minor', alpha=0.5)
-        plt.tight_layout()
-        st.pyplot(fig)
+        # Add smooth curve
+        fig.add_trace(go.Scatter(
+            x=plot_x,
+            y=plot_y,
+            mode='lines',
+            name='Curve',
+            line=dict(color='#0492a8', width=2)
+        ))
+        
+        # Add control points
+        fig.add_trace(go.Scatter(
+            x=xs,
+            y=ys,
+            mode='markers',
+            name='Control Points',
+            marker=dict(color='#0492a8', size=10)
+        ))
+        
+        # Update layout
+        fig.update_layout(
+            title='Firmness Profile',
+            xaxis_title='Rows',
+            yaxis_title='Firmness Level',
+            hovermode='closest',
+            height=height,
+            width=width,
+            xaxis=dict(
+                range=[xmin - 0.5, xmax + 0.5],
+                dtick=1
+            ),
+            yaxis=dict(
+                range=[vmin, vmax],
+                dtick=1
+            ),
+            showlegend=False,
+            plot_bgcolor='white',
+            paper_bgcolor='white'
+        )
+        
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
+        
+        st.plotly_chart(fig, use_container_width=True)
 
     return st.session_state[lut_key]
 

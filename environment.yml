@@ -1,0 +1,8 @@
+name: snowflake_env
+channels:
+  - https://repo.anaconda.com/pkgs/snowflake
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - plotly
