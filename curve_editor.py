@@ -13,12 +13,8 @@ Returns:
 """
 from typing import List, Optional, Tuple
 
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for Snowflake/server environments
-
 import numpy as np
 import streamlit as st
-import matplotlib.pyplot as plt
 
 
 def _clamp_values(arr: np.ndarray, vmin: int = 0, vmax: int = 255) -> np.ndarray:
@@ -97,6 +93,10 @@ def show_curve_editor(
     -------
     list of ints: sampled values length sample_count saved to st.session_state[f"{key}_lut"]
     """
+    import matplotlib
+    matplotlib.use('Agg')  # Use non-interactive backend for Snowflake/server environments
+    import matplotlib.pyplot as plt
+    
     xmin, xmax = x_domain
     vmin, vmax = value_range
 
