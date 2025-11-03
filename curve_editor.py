@@ -206,6 +206,10 @@ def show_curve_editor(
             marker=dict(color='#0492a8', size=10)
         ))
         
+        # Add custom gridlines offset by 0.5 to be between numbers
+        for i in np.arange(int(xmin) + 0.5, int(xmax), 1):
+            fig.add_vline(x=i, line_dash="solid", line_color="LightGray", line_width=1)
+        
         # Update layout
         fig.update_layout(
             title='Firmness Profile',
@@ -214,23 +218,14 @@ def show_curve_editor(
             hovermode='closest',
             height=height,
             width=width,
-            xaxis=dict(
-                range=[xmin - 0.5, xmax + 0.5],
-                dtick=1
-            ),
-            yaxis=dict(
-                range=[vmin, vmax],
-                dtick=1
-            ),
+            xaxis=dict(range=[xmin - 0.5, xmax + 0.5], dtick=1, fixedrange=True, showgrid=False),
+            yaxis=dict(range=[vmin, vmax], dtick=1, fixedrange=True, showgrid=True, gridcolor='LightGray'),
             showlegend=False,
             plot_bgcolor='white',
             paper_bgcolor='white'
         )
         
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
-        
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
 
     return st.session_state[lut_key]
 
