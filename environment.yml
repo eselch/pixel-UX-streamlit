@@ -1,9 +1,10 @@
 name: snowflake_env
 channels:
-  - snowflake
+  - https://repo.anaconda.com/pkgs/snowflake
 dependencies:
   - python=3.11
+  - snowflake-snowpark-python
   - streamlit
   - matplotlib
-  - numpy
   - pandas
+  - numpy
