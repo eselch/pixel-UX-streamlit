@@ -1,6 +1,6 @@
 name: snowflake_env
 channels:
-  - conda-forge
+  - https://repo.anaconda.com/pkgs/snowflake
 dependencies:
   - python=3.10
   - streamlit
