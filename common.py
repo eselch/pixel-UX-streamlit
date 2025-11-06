@@ -58,6 +58,8 @@ def apply_base_ui(title: str = ""):
         h3 {
             font-size: 20px !important;
             font-weight: 350 !important;
+            margin-bottom: 0.2rem !important;
+
         }
     </style>
     """, unsafe_allow_html=True)

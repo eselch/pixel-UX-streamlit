@@ -1,6 +1,7 @@
 """Survey questions module for the Profile page."""
 
 import streamlit as st
+import data_processing as dp
 
 
 def render_survey_questions(side_key: str):
@@ -102,7 +103,12 @@ def render_survey_questions(side_key: str):
         key=f"{side_key}_firmness"
     )
     
-    st.session_state.answers[side_key]["firmness_value"] = firmness_options[selected_firmness_label]
+    firmness_value = firmness_options[selected_firmness_label]
+    st.session_state.answers[side_key]["firmness_value"] = firmness_value
+    st.session_state.answers[side_key]["firmness_label"] = selected_firmness_label
+    
+    # Trigger master array update when firmness changes
+    dp.update_master_array_from_firmness(side_key, firmness_value)
 
 # Question 6: Gender
     st.subheader("Gender")

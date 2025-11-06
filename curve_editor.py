@@ -1,25 +1,22 @@
 """Curve editor widget for Streamlit apps.
 
 Provides show_curve_editor() which renders a cubic curve
-through four control points. Points are adjustable with integer steps and
-the resulting 256-sample lookup table (LUT) is saved in st.session_state.
+through the master 1D array (domain 1-17) stored in session state via data_processing.
 
 Usage (from any page):
     from curve_editor import show_curve_editor
-    lut = show_curve_editor(key="mycurve")
+    show_curve_editor(side_key="sleeper_1")
 
-Returns:
-    A list of 256 integers (0-255) representing the sampled curve values.
+The function reads/writes to:
+    st.session_state.answers[side_key]["master_array"]
 """
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import streamlit as st
 import plotly.graph_objects as go
 
-
-def _clamp_values(arr: np.ndarray, vmin: int = 0, vmax: int = 255) -> np.ndarray:
-    return np.clip(np.round(arr).astype(int), vmin, vmax)
+import data_processing as dp
 
 
 def _piecewise_hermite_zero_deriv(xs: np.ndarray, ys: np.ndarray, x_eval: np.ndarray) -> np.ndarray:
@@ -70,122 +67,85 @@ def _piecewise_hermite_zero_deriv(xs: np.ndarray, ys: np.ndarray, x_eval: np.nda
 
 
 def show_curve_editor(
-    key: str = "curve",
-    initial: Optional[Tuple[int, int, int, int]] = None,
-    x_domain: Tuple[int, int] = (0, 18),
-    sample_count: Optional[int] = None,
-    value_range: Tuple[int, int] = (1, 5),
+    side_key: str = "sleeper_1",
+    x_domain: Tuple[int, int] = (1, 17),
+    value_range: Tuple[int, int] = (0, 4),
     width: int = 700,
     height: int = 320,
     num_points: int = 6,
-) -> List[int]:
-    """Render a curve editor and return the sampled LUT.
+) -> None:
+    """Render a curve editor driven by the master array in data_processing.
 
     Parameters
     ----------
-    key: session key prefix used for session_state storage
-    initial: optional tuple of 4 initial y-values (integers). If None, defaults to flat 0..255 mapping.
-    x_domain: domain of x (min,max) used for control points and sampling
-    sample_count: how many samples to produce (usually 256)
-    value_range: allowed y value range (min,max)
-    width/height: size of the matplotlib figure
-
-    Returns
-    -------
-    list of ints: sampled values length sample_count saved to st.session_state[f"{key}_lut"]
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    x_domain : Tuple[int, int]
+        Domain of x (min, max) - typically (1, 17) matching master array
+    value_range : Tuple[int, int]
+        Allowed y value range (min, max)
+    width/height : int
+        Size of the plotly figure
+    num_points : int
+        Number of control points to display
     """
     xmin, xmax = x_domain
     vmin, vmax = value_range
-
-    # If sample_count not provided, sample at integer x positions across domain
-    if sample_count is None:
-        sample_count = int(xmax - xmin + 1)
-
-    # default control x positions (evenly spaced across domain) and snap to integers
+    
+    # Initialize master arrays if not already done
+    dp.initialize_sleeper_master_arrays()
+    
+    # Get the master array for this sleeper
+    master_array = dp.get_master_array(side_key)
+    
+    # Default control x positions (evenly spaced across domain)
     xs = np.linspace(xmin, xmax, num_points)
     xs = np.round(xs).astype(int)
-
-    if initial is None:
-        # default to the integer midpoint of the value range (e.g., 3 for 1..5)
-        center = int(round((vmin + vmax) / 2.0))
-        ys0 = np.full(len(xs), center, dtype=int)
-    else:
-        # allow a scalar (broadcast) or an iterable matching num_points
-        if isinstance(initial, (int, float)):
-            ys0 = np.full(len(xs), int(initial), dtype=int)
-        else:
-            try:
-                init_list = list(initial)
-            except TypeError:
-                raise TypeError("initial must be an int/float or an iterable of ints")
-            if len(init_list) == 1:
-                ys0 = np.full(len(xs), int(init_list[0]), dtype=int)
-            elif len(init_list) != len(xs):
-                raise ValueError(f"initial must have length {len(xs)} (num_points) or be a scalar")
-            else:
-                ys0 = np.array([int(v) for v in init_list], dtype=int)
-
-    # session state keys for the control points
-    points_key = f"{key}_points"
-    lut_key = f"{key}_lut"
-
-    if points_key not in st.session_state:
-        st.session_state[points_key] = ys0.tolist()
-
+    
+    # Get y values from master array at control point x positions
+    # Interpolate if x positions don't fall on integer indices
+    ys = np.interp(xs, np.arange(1, 18), master_array)
+    
     # Render UI: two columns, left plot right controls
-    col_plot, col_controls = st.columns([2, 1])
+    col_plot, col_controls = st.columns([3, 1])
 
     with col_controls:
         st.subheader("Firmness Selector")
-        # show four number inputs, step=1
         new_points = []
+        
         for i in range(num_points):
             label = f"Point {i+1} (Row {int(xs[i])})"
             cur = st.number_input(
                 label,
                 min_value=int(vmin),
                 max_value=int(vmax),
-                value=int(st.session_state[points_key][i]),
+                value=int(ys[i]),
                 step=1,
-                key=f"{points_key}_{i}",
+                key=f"{side_key}_point_{i}",
             )
             new_points.append(int(cur))
-
-        # update session state if changed
-        if new_points != st.session_state[points_key]:
-            st.session_state[points_key] = new_points
-
+        
+        # Update master array if control points changed
+        if not np.array_equal(ys, new_points):
+            # Interpolate full master array from updated control points
+            updated_master = np.interp(np.arange(1, 18), xs, new_points)
+            updated_master = np.clip(updated_master, vmin, vmax).astype(int)
+            dp.set_master_array(side_key, updated_master)
+            ys = new_points
+        
         st.markdown("---")
-        st.caption("Adjust points in integer steps; the smooth cubic curve will update.")
+        st.caption("Adjust points to customize firmness profile.")
 
-    # Now compute cubic polynomial through the four control points
-    # ensure control values are clamped to the allowed range
-    ys = np.array(st.session_state[points_key], dtype=float)
-    ys = np.clip(ys, vmin, vmax)
-    st.session_state[points_key] = [int(v) for v in ys]
-
-    # Use piecewise Hermite interpolation with zero derivatives at control
-    # points so the handles are horizontal. This produces a smooth curve for
-    # plotting while control points remain integers.
-    # For display: sample a dense set of floating-point points so the plotted
-    # curve looks smooth. We clip to the allowed value range but DO NOT round
-    # values for plotting — rounding is only for the LUT/storage.
+    # Use piecewise Hermite interpolation for smooth curve display
     plot_samples = 1024
     plot_x = np.linspace(xmin, xmax, plot_samples)
     plot_y = _piecewise_hermite_zero_deriv(xs, ys, plot_x)
     plot_y = np.clip(plot_y, vmin, vmax)
 
-    # For LUT/storage: sample at the requested resolution (sample_count) and
-    # round/clamp to integers before saving to session state.
-    x_samples = np.linspace(xmin, xmax, sample_count)
-    y_samples = _piecewise_hermite_zero_deriv(xs, ys, x_samples)
-    y_samples = _clamp_values(y_samples, vmin, vmax)
-
-    # Save LUT into session state
-    st.session_state[lut_key] = y_samples.tolist()
-
     # Plot the curve and control points using Plotly
     with col_plot:
+        st.subheader("Firmness Profile")
+
         fig = go.Figure()
         
         # Add smooth curve
@@ -206,13 +166,27 @@ def show_curve_editor(
             marker=dict(color='#0492a8', size=10)
         ))
         
+        # Add labels above each control point
+        for i, (x, y) in enumerate(zip(xs, ys)):
+            fig.add_annotation(
+                x=x,
+                y=y,
+                text=f"Point {i+1}",
+                showarrow=False,
+                yshift=15,
+                font=dict(size=12, color='#6e6f72'),
+                bgcolor='rgba(255, 255, 255, 0)',
+                bordercolor='rgba(4, 146, 168, 0)',
+                borderwidth=1,
+                borderpad=2
+            )
+        
         # Add custom gridlines offset by 0.5 to be between numbers
         for i in np.arange(int(xmin) + 0.5, int(xmax), 1):
             fig.add_vline(x=i, line_dash="solid", line_color="LightGray", line_width=1)
         
         # Update layout
         fig.update_layout(
-            title='Firmness Profile',
             xaxis_title='Rows',
             yaxis_title='Firmness Level',
             hovermode='closest',
@@ -226,8 +200,7 @@ def show_curve_editor(
         )
         
         st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
-
-    return st.session_state[lut_key]
+        st.write("")
 
 
 if __name__ == "__main__":
