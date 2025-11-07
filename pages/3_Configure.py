@@ -99,6 +99,8 @@ with col2:
         on_change=on_firmness_change
     )
 
+    st.write("")  # adds spacing
+
     # Show curve controls
     show_curve_controls(side_key=side_key)
 
@@ -107,7 +109,7 @@ with col1:
     side_key = "sleeper_1" if current_sleeper == "Sleeper 1" else "sleeper_2"
 
     # Display sleeper name from session state or default to current sleeper
-    sleeper_name = st.session_state.answers.get(side_key, {}).get("name", current_sleeper)
+    sleeper_name = st.session_state.answers.get(side_key, {}).get("setting1", current_sleeper)
     st.subheader(sleeper_name)
     
     # Generate high-resolution LUT from interpolated curve for pixel map
@@ -116,8 +118,19 @@ with col1:
     width = dp.get_array_width()
     pixel_map_2d = dp.pixel_map(curve_lut, width)
 
-    # Draw pixel map with max height
-    dp.draw_pixel_map(pixel_map_2d, height=450)
+    # Custom colorscale: maps firmness values 0-4 to specific Pantone colors
+    # 0 = Very Soft (Teal), 1 = Soft (Tibetan Stone), 2 = Medium (White),
+    # 3 = Firm (Yolk Yellow), 4 = Very Firm (Mandarin Red)
+    custom_colorscale = [
+        [0.0, "#E9F1F0"],
+        [0.25, "#A7C7BF"],
+        [0.5, "#1E99A8"],
+        [0.75, "#006261"],
+        [1.0, "#0A2734"]
+    ]
+
+    # Draw pixel map with max height and custom colors
+    dp.draw_pixel_map(pixel_map_2d, height=450, colorscale=custom_colorscale)
     
     # Show curve plot with custom height - let it fetch fresh data
     show_curve_plot(side_key=side_key, height=200)# Debug: Display collected data

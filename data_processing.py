@@ -146,15 +146,6 @@ def draw_pixel_map(
     width : int, optional
         Chart width in pixels. If None, auto-calculated from array size.
     """
-    # Default colorscale if none provided (blue gradient for firmness levels 0-4)
-    if colorscale is None:
-        colorscale = [
-            [0.0, "#e3f2fd"],    # 0 - Very Soft (light blue)
-            [0.25, "#90caf9"],   # 1 - Soft (medium blue)
-            [0.5, "#42a5f5"],    # 2 - Medium (blue)
-            [0.75, "#1e88e5"],   # 3 - Firm (dark blue)
-            [1.0, "#0d47a1"],    # 4 - Very Firm (darkest blue)
-        ]
     
     rows, cols = pixel_map_2d.shape
     
@@ -200,6 +191,7 @@ def draw_pixel_map(
             tickmode='array',
             tickvals=list(range(1, rows+1)),  # Show all ticks (1 to rows)
             dtick=1,  # Show every row number
+            ticks="",  # Remove tick marks
             showline=False,  # Hide y-axis line
             zeroline=False,  # Hide zero line
             autorange="reversed",  # Row 1 at top
