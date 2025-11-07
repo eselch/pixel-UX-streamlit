@@ -42,7 +42,6 @@ def apply_base_ui(title: str = ""):
         body, p, span, div {
             font-size: 16px !important;
             font-weight: 350 !important;
-
         }
         h1 {
             font-size: 40px !important;
@@ -51,7 +50,7 @@ def apply_base_ui(title: str = ""):
         }
         h2 {
             font-size: 20px !important;
-            margin-bottom: 0.5rem !important;
+            margin-bottom: 0.25rem !important;
             font-weight: 700 !important;
             text-align: center !important;
         }
