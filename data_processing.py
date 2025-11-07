@@ -177,6 +177,8 @@ def draw_pixel_map(
             texttemplate="%{text}" if show_values else None,
             textfont=dict(size=12, color="white"),
             hoverinfo="none",  # Disable hover
+            xgap=2,  # Add white gap between cells horizontally
+            ygap=2,  # Add white gap between cells vertically
         )
     )
     

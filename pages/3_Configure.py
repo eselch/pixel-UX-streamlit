@@ -1,7 +1,7 @@
 import streamlit as st
 import common as ui
 import data_processing as dp
-from curve_editor import show_curve_plot, show_curve_controls
+from curve_editor import show_curve_plot, show_curve_controls, get_interpolated_curve_lut
 
 ui.apply_base_ui("Configure Your Mattress")
 
@@ -12,9 +12,7 @@ if "answers" not in st.session_state:
 # Initialize master arrays from data_processing
 dp.initialize_sleeper_master_arrays()
 
-# Map selected sleeper to side_key
-current_sleeper = st.session_state.get("current_configure_sleeper", "Sleeper 1")
-side_key = "sleeper_1" if current_sleeper == "Sleeper 1" else "sleeper_2"
+st.session_state.setdefault("current_configure_sleeper", "Sleeper 1")
 
 #Column Layout
 col1, col2 = st.columns([3, 1])
@@ -29,18 +27,36 @@ with col2:
         sleepers_available.append("Sleeper 2")
 
     if len(sleepers_available) > 1:
-        current_sleeper = st.session_state.get("current_configure_sleeper", "Sleeper 1")
-        selected = st.radio(
-            "Select Sleeper",
-            options=sleepers_available,
-            index=sleepers_available.index(current_sleeper) if current_sleeper in sleepers_available else 0,
-            horizontal=True,
-            label_visibility="collapsed",
-            key="sleeper_toggle"
-        )
-        st.session_state["current_configure_sleeper"] = selected
+        current_selection = st.session_state.get("current_configure_sleeper", "Sleeper 1")
+        
+        # Two-column button layout for sleeper selection
+        btn_col1, btn_col2 = st.columns(2)
+        
+        with btn_col1:
+            if st.button(
+                "Sleeper 1",
+                use_container_width=True,
+                type="primary" if current_selection == "Sleeper 1" else "secondary",
+                key="sleeper_1_btn"
+            ):
+                st.session_state["current_configure_sleeper"] = "Sleeper 1"
+                st.rerun()
+        
+        with btn_col2:
+            if st.button(
+                "Sleeper 2",
+                use_container_width=True,
+                type="primary" if current_selection == "Sleeper 2" else "secondary",
+                key="sleeper_2_btn"
+            ):
+                st.session_state["current_configure_sleeper"] = "Sleeper 2"
+                st.rerun()
     else:
-        st.session_state["current_configure_sleeper"] = "Sleeper 1"
+        default_sleeper = sleepers_available[0] if sleepers_available else "Sleeper 1"
+        st.session_state["current_configure_sleeper"] = default_sleeper
+
+    current_sleeper = st.session_state["current_configure_sleeper"]
+    side_key = "sleeper_1" if current_sleeper == "Sleeper 1" else "sleeper_2"
 
     # Bed size selection
     selected_bed = st.selectbox(
@@ -87,10 +103,18 @@ with col2:
     show_curve_controls(side_key=side_key)
 
 with col1:
-    # Always fetch fresh master array from session state for plot
-    master_array = dp.get_master_array(side_key)
+    current_sleeper = st.session_state["current_configure_sleeper"]
+    side_key = "sleeper_1" if current_sleeper == "Sleeper 1" else "sleeper_2"
+
+    # Display sleeper name from session state or default to current sleeper
+    sleeper_name = st.session_state.answers.get(side_key, {}).get("name", current_sleeper)
+    st.subheader(sleeper_name)
+    
+    # Generate high-resolution LUT from interpolated curve for pixel map
+    # This uses the smooth Hermite curve instead of the master array
+    curve_lut = get_interpolated_curve_lut(side_key)
     width = dp.get_array_width()
-    pixel_map_2d = dp.pixel_map(master_array, width)
+    pixel_map_2d = dp.pixel_map(curve_lut, width)
 
     # Draw pixel map with max height
     dp.draw_pixel_map(pixel_map_2d, height=450)

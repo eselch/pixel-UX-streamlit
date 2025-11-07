@@ -93,6 +93,60 @@ def _piecewise_hermite_smooth(xs: np.ndarray, ys: np.ndarray, x_eval: np.ndarray
         y_out[mid_mask] = yvals
 
     return y_out
+
+
+def get_interpolated_curve_lut(
+    side_key: str = "sleeper_1",
+    array_length: int = None,
+    num_points: int = 6,
+    value_range: Tuple[int, int] = (0, 4),
+) -> np.ndarray:
+    """Generate a downsampled LUT array from the high-resolution interpolated curve.
+    
+    This creates a 1D array by evaluating the smooth Hermite curve at each integer
+    position from 1 to array_length. This is the high-resolution version of the
+    curve shown in the curve editor, suitable for driving the pixel map.
+    
+    Parameters
+    ----------
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    array_length : int, optional
+        Length of the output LUT array. If None, retrieves from session state.
+    num_points : int
+        Number of control points used for interpolation
+    value_range : Tuple[int, int]
+        Allowed y value range (min, max)
+    
+    Returns
+    -------
+    np.ndarray
+        1D array of length array_length with interpolated firmness values
+    """
+    if array_length is None:
+        array_length = dp.get_array_length()
+    
+    vmin, vmax = value_range
+    x_domain = (1, array_length)
+    
+    # Get control point positions and values
+    xs, ys_float, xmin, xmax = _get_curve_data(side_key, array_length, x_domain, num_points)
+    
+    # Round control point y values to integers
+    ys = np.round(ys_float).astype(int)
+    ys = np.clip(ys, vmin, vmax)
+    
+    # Evaluate the smooth curve at each integer position
+    lut_x = np.arange(1, array_length + 1)
+    lut_y = _piecewise_hermite_smooth(xs, ys, lut_x)
+    lut_y = np.clip(lut_y, vmin, vmax)
+    
+    # Round to integers for the LUT
+    lut_y = np.round(lut_y).astype(int)
+    
+    return lut_y
+
+
 def _get_curve_data(
     side_key: str = "sleeper_1",
     array_length: int = None,
