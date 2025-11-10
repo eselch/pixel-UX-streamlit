@@ -12,9 +12,13 @@ def render_survey_questions(side_key: str):
     """
 # Question 1: Name
     st.subheader("First Name")
+    
+    # Set default name based on side_key if not already set
+    default_name = "Sleeper 1" if side_key == "sleeper_1" else "Sleeper 2"
+    
     st.session_state.answers[side_key]["setting1"] = st.text_input(
         "Enter your first name:", 
-        value=st.session_state.answers[side_key].get("setting1", ""),
+        value=st.session_state.answers[side_key].get("setting1", default_name),
         label_visibility="collapsed",
         key=f"{side_key}_setting1"
     )

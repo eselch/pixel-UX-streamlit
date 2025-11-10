@@ -205,6 +205,8 @@ def _get_curve_data(
     ys = np.array([master_array[x - 1] for x in xs], dtype=float)
     
     return xs, ys, xmin, xmax
+
+
 def show_curve_controls(
     side_key: str = "sleeper_1",
     array_length: int = None,

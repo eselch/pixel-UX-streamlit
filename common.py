@@ -22,6 +22,7 @@ def apply_base_ui(title: str = ""):
     # custom CSS for buttons to match theme colors
     st.markdown("""
     <style>
+        /* Default button styling (secondary) */
         .stButton > button {
             background-color: #F0F2F6 !important;
             color: #6e6f72 !important;
@@ -39,6 +40,25 @@ def apply_base_ui(title: str = ""):
             background-color: #025763 !important;
             color: white !important;
         }
+        
+        /* Primary button styling (selected state) */
+        .stButton > button[kind="primary"] {
+            background-color: #036d7c !important;
+            color: white !important;
+        }
+        .stButton > button[kind="primary"]:hover {
+            background-color: #025763 !important;
+            color: white !important;
+        }
+        
+        /* Disabled button styling */
+        .stButton > button:disabled {
+            background-color: #036d7c !important;
+            color: white !important;
+            opacity: 1 !important;
+            cursor: default !important;
+        }
+        
         body, p, span, div {
             font-size: 16px !important;
             font-weight: 350 !important;
@@ -98,7 +118,8 @@ def render_dual_column_headers(left_header: str = "Left", right_header: str = "R
     Returns:
         tuple: (col_left, col_right) for use with context managers
     """
-    col_left, _, col_right = st.columns([4, 1, 4])
+    # Add narrow columns on outer edges to center content
+    _, col_left, _, col_right, _ = st.columns([1, 2, 1, 2, 1])
     
     with col_left:
         _, col_center_left, _ = st.columns([1, 2, 1])

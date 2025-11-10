@@ -14,6 +14,9 @@ dp.initialize_sleeper_master_arrays()
 
 st.session_state.setdefault("current_configure_sleeper", "Sleeper 1")
 
+# Initialize sleeper side preference (which sleeper is on left vs right)
+st.session_state.setdefault("sleeper_1_on_left", True)
+
 #Column Layout
 col1, col2 = st.columns([3, 1])
 
@@ -29,25 +32,39 @@ with col2:
     if len(sleepers_available) > 1:
         current_selection = st.session_state.get("current_configure_sleeper", "Sleeper 1")
         
+        # Get sleeper names for button labels
+        sleeper_1_name = st.session_state.answers.get("sleeper_1", {}).get("setting1", "Sleeper 1")
+        sleeper_2_name = st.session_state.answers.get("sleeper_2", {}).get("setting1", "Sleeper 2")
+        
         # Two-column button layout for sleeper selection
         btn_col1, btn_col2 = st.columns(2)
         
         with btn_col1:
+            # Apply selected styling via container
+            is_selected = current_selection == "Sleeper 1"
+            button_style = "primary" if is_selected else "secondary"
+            
             if st.button(
-                "Sleeper 1",
+                sleeper_1_name,
                 use_container_width=True,
-                type="primary" if current_selection == "Sleeper 1" else "secondary",
-                key="sleeper_1_btn"
+                type=button_style,
+                key="sleeper_1_btn",
+                disabled=is_selected  # Disable if already selected
             ):
                 st.session_state["current_configure_sleeper"] = "Sleeper 1"
                 st.rerun()
         
         with btn_col2:
+            # Apply selected styling via container
+            is_selected = current_selection == "Sleeper 2"
+            button_style = "primary" if is_selected else "secondary"
+            
             if st.button(
-                "Sleeper 2",
+                sleeper_2_name,
                 use_container_width=True,
-                type="primary" if current_selection == "Sleeper 2" else "secondary",
-                key="sleeper_2_btn"
+                type=button_style,
+                key="sleeper_2_btn",
+                disabled=is_selected  # Disable if already selected
             ):
                 st.session_state["current_configure_sleeper"] = "Sleeper 2"
                 st.rerun()
@@ -100,6 +117,13 @@ with col2:
     )
 
     st.write("")  # adds spacing
+    
+    # Add swap sides button
+    if st.button("Swap Sides", use_container_width=True, key="swap_sides_btn"):
+        st.session_state["sleeper_1_on_left"] = not st.session_state["sleeper_1_on_left"]
+        st.rerun()
+    
+    st.write("")  # adds spacing
 
     # Show curve controls
     show_curve_controls(side_key=side_key)
@@ -108,15 +132,57 @@ with col1:
     current_sleeper = st.session_state["current_configure_sleeper"]
     side_key = "sleeper_1" if current_sleeper == "Sleeper 1" else "sleeper_2"
 
-    # Display sleeper name from session state or default to current sleeper
-    sleeper_name = st.session_state.answers.get(side_key, {}).get("setting1", current_sleeper)
-    st.subheader(sleeper_name)
-    
-    # Generate high-resolution LUT from interpolated curve for pixel map
-    # This uses the smooth Hermite curve instead of the master array
-    curve_lut = get_interpolated_curve_lut(side_key)
-    width = dp.get_array_width()
-    pixel_map_2d = dp.pixel_map(curve_lut, width)
+    # Check if we have both sleepers configured
+    has_both_sleepers = (
+        st.session_state.answers.get("sleeper_1") and 
+        st.session_state.get("show_right") and 
+        st.session_state.answers.get("sleeper_2")
+    )
+
+    if has_both_sleepers:
+        # Determine which sleeper is on which side
+        if st.session_state["sleeper_1_on_left"]:
+            left_key = "sleeper_1"
+            right_key = "sleeper_2"
+        else:
+            left_key = "sleeper_2"
+            right_key = "sleeper_1"
+        
+        # Get names for labels
+        left_name = st.session_state.answers.get(left_key, {}).get("setting1", "Sleeper " + left_key[-1])
+        right_name = st.session_state.answers.get(right_key, {}).get("setting1", "Sleeper " + right_key[-1])
+        
+        # Display names above heatmap
+        _, name_col1, name_col2, _ = st.columns(4)
+        with name_col1:
+            st.markdown(f"<h3 style='text-align: center;'>{left_name}</h3>", unsafe_allow_html=True)
+        with name_col2:
+            st.markdown(f"<h3 style='text-align: center;'>{right_name}</h3>", unsafe_allow_html=True)
+        
+        # Generate interpolated curves for both sleepers
+        left_lut = get_interpolated_curve_lut(left_key)
+        right_lut = get_interpolated_curve_lut(right_key)
+        
+        # Get width per sleeper (half the total bed width)
+        total_width = dp.get_array_width()
+        width_per_sleeper = total_width // 2
+        
+        # Create dual sleeper pixel map
+        pixel_map_2d = dp.pixel_map_dual_sleeper(left_lut, right_lut, width_per_sleeper)
+    else:
+        # Single sleeper mode - show same data on both sides
+        sleeper_name = st.session_state.answers.get(side_key, {}).get("setting1", current_sleeper)
+        st.markdown(f"<h3 style='text-align: center;'>{sleeper_name}</h3>", unsafe_allow_html=True)
+        
+        # Generate high-resolution LUT from interpolated curve for pixel map
+        curve_lut = get_interpolated_curve_lut(side_key)
+        
+        # Get width per sleeper (half the total bed width)
+        total_width = dp.get_array_width()
+        width_per_sleeper = total_width // 2
+        
+        # Use the same data for both sides
+        pixel_map_2d = dp.pixel_map_dual_sleeper(curve_lut, curve_lut, width_per_sleeper)
 
     # Custom colorscale: maps firmness values 0-4 to specific Pantone colors
     # 0 = Very Soft (Teal), 1 = Soft (Tibetan Stone), 2 = Medium (White),
@@ -129,7 +195,17 @@ with col1:
         [1.0, "#0A2734"]
     ]
 
-    # Draw pixel map with max height and custom colors
+    # Center the heatmap using CSS
+    st.markdown("""
+        <style>
+        div[data-testid="stPlotlyChart"] {
+            display: flex;
+            justify-content: center;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    # Draw pixel map with fixed width and custom colors
     dp.draw_pixel_map(pixel_map_2d, height=450, colorscale=custom_colorscale)
     
     # Show curve plot with custom height - let it fetch fresh data

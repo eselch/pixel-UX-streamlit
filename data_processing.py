@@ -7,6 +7,7 @@ and other downstream visualizations.
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
+from scipy.signal import find_peaks
 
 # Master array configuration
 MASTER_VALUE_RANGE = (0, 4)  # Value range for array elements
@@ -18,9 +19,9 @@ FIRMNESS_LABELS = ["Very Soft (0)", "Soft (1)", "Medium (2)", "Firm (3)", "Very 
 # Bed size configurations: name -> (length, width)
 # Single source of truth for array dimensions
 BED_SIZES = {
-    "Queen": (17, 6),
-    "King": (17, 8),
-    "St George King": (26, 13),
+    "Queen": (17, 12),
+    "King": (17, 16),
+    "St George King": (26, 26),
 }
 
 
@@ -121,19 +122,238 @@ def pixel_map(master_array: np.ndarray, width: int) -> np.ndarray:
     return pixel_map_2d
 
 
+def pixel_map_dual_sleeper(
+    left_array: np.ndarray, 
+    right_array: np.ndarray, 
+    width_per_sleeper: int
+) -> np.ndarray:
+    """Create a 2D pixel map with two sleeper arrays side-by-side.
+    
+    The left half of the heatmap shows left_array data, and the right half
+    shows right_array data. Each sleeper's 1D array is replicated across
+    their respective columns.
+    
+    Parameters
+    ----------
+    left_array : np.ndarray
+        1D array for the left sleeper (length = array_length)
+    right_array : np.ndarray
+        1D array for the right sleeper (length = array_length)
+    width_per_sleeper : int
+        Number of columns for each sleeper's half
+    
+    Returns
+    -------
+    np.ndarray
+        2D array of shape (array_length, width_per_sleeper * 2)
+        Left half uses left_array, right half uses right_array
+    """
+    # Ensure arrays are numpy arrays
+    left_array = np.asarray(left_array, dtype=int)
+    right_array = np.asarray(right_array, dtype=int)
+    
+    # Create pixel maps for each sleeper
+    left_map = np.tile(left_array[:, np.newaxis], (1, width_per_sleeper))
+    right_map = np.tile(right_array[:, np.newaxis], (1, width_per_sleeper))
+    
+    # Concatenate horizontally (left | right)
+    dual_map = np.hstack([left_map, right_map])
+    
+    return dual_map
+
+
+def downsample_pressure_map(
+    pressure_array: np.ndarray,
+    target_shape: tuple = (17, 9)
+) -> np.ndarray:
+    """Downsample a high-resolution pressure map to a lower resolution grid.
+    
+    Handles automatic rotation if the array comes in rotated (64x160 instead of 160x64).
+    Uses block averaging to preserve spatial information while reducing resolution.
+    
+    Parameters
+    ----------
+    pressure_array : np.ndarray
+        Input pressure map, expected to be 160x64 or 64x160
+    target_shape : tuple
+        Target dimensions (rows, cols), default is (17, 9) for Queen bed
+    
+    Returns
+    -------
+    np.ndarray
+        Downsampled array of shape target_shape
+        
+    Notes
+    -----
+    - If input is 64x160, it will be rotated 90° counterclockwise to 160x64
+    - Uses block averaging: divides array into blocks and takes mean of each block
+    - Preserves spatial layout and pressure distribution
+    """
+    pressure_array = np.asarray(pressure_array, dtype=float)
+    
+    # Check if array needs rotation (64x160 instead of 160x64)
+    rows, cols = pressure_array.shape
+    if rows == 64 and cols == 160:
+        # Rotate 90° counterclockwise: rot90(k=1)
+        pressure_array = np.rot90(pressure_array, k=1)
+        rows, cols = pressure_array.shape
+    
+    # Verify we have the expected shape (160x64)
+    if rows != 160 or cols != 64:
+        raise ValueError(
+            f"Expected pressure map to be 160x64 or 64x160, got {pressure_array.shape}. "
+            "Please check the input data."
+        )
+    
+    target_rows, target_cols = target_shape
+    
+    # Calculate block sizes for downsampling
+    # Each block in the output represents a region in the input
+    block_height = rows / target_rows  # e.g., 160 / 17 ≈ 9.41
+    block_width = cols / target_cols    # e.g., 64 / 9 ≈ 7.11
+    
+    # Create output array
+    downsampled = np.zeros(target_shape, dtype=float)
+    
+    # Downsample using block averaging
+    for i in range(target_rows):
+        for j in range(target_cols):
+            # Calculate block boundaries in original array
+            row_start = int(i * block_height)
+            row_end = int((i + 1) * block_height)
+            col_start = int(j * block_width)
+            col_end = int((j + 1) * block_width)
+            
+            # Extract block and compute mean
+            block = pressure_array[row_start:row_end, col_start:col_end]
+            downsampled[i, j] = np.mean(block)
+    
+    return downsampled
+
+
+def pressure_map_to_1d_array(pressure_map_2d: np.ndarray) -> np.ndarray:
+    """Convert a 2D pressure map to a 1D array using the max value from each row.
+    
+    Takes a 2D array (typically 17x9 for a Queen bed) and creates a 1D array
+    where each element is the maximum value from the corresponding row.
+    
+    Parameters
+    ----------
+    pressure_map_2d : np.ndarray
+        2D pressure map array, typically shape (17, 9)
+    
+    Returns
+    -------
+    np.ndarray
+        1D array with length equal to number of rows, where each element
+        is the max value from that row
+        
+    Examples
+    --------
+    >>> pressure_map = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+    >>> pressure_map_to_1d_array(pressure_map)
+    array([3, 6, 9])
+    """
+    pressure_map_2d = np.asarray(pressure_map_2d)
+    
+    # Get max value from each row (axis=1)
+    return np.max(pressure_map_2d, axis=1)
+
+
+def find_extrema(
+    array_1d: np.ndarray,
+    num_maxima: int = 3,
+    num_minima: int = 3,
+    prominence: float = None,
+    distance: int = None
+) -> tuple:
+    """Find local maxima and minima in a 1D array.
+    
+    Uses peak detection to identify the most prominent high and low points.
+    You can control how many peaks are found by adjusting prominence or distance.
+    
+    Parameters
+    ----------
+    array_1d : np.ndarray
+        1D array to analyze
+    num_maxima : int
+        Number of maximum points to find (returns top N by prominence)
+    num_minima : int
+        Number of minimum points to find (returns top N by prominence)
+    prominence : float, optional
+        Required prominence of peaks. Higher values = fewer, more prominent peaks.
+        If None, auto-calculated based on data range.
+    distance : int, optional
+        Minimum distance between peaks (in indices). If None, no constraint.
+    
+    Returns
+    -------
+    tuple
+        (maxima_indices, maxima_values, minima_indices, minima_values)
+        Each as numpy arrays, sorted by position
+        
+    Examples
+    --------
+    >>> data = np.array([1, 3, 1, 5, 2, 4, 1, 3, 1])
+    >>> max_idx, max_val, min_idx, min_val = find_extrema(data, num_maxima=2, num_minima=2)
+    >>> print(max_idx)  # Indices of top 2 maxima
+    [3 5]
+    >>> print(max_val)  # Values at those indices
+    [5 4]
+    """
+    array_1d = np.asarray(array_1d)
+    
+    # Auto-calculate prominence if not specified
+    if prominence is None:
+        data_range = np.ptp(array_1d)  # peak-to-peak (max - min)
+        prominence = data_range * 0.1  # 10% of range
+    
+    # Find maxima
+    max_peaks, max_properties = find_peaks(
+        array_1d, 
+        prominence=prominence,
+        distance=distance
+    )
+    
+    # Find minima (invert array and find peaks)
+    min_peaks, min_properties = find_peaks(
+        -array_1d,  # Invert to find minima
+        prominence=prominence,
+        distance=distance
+    )
+    
+    # Sort by prominence and take top N
+    if len(max_peaks) > num_maxima:
+        top_max_indices = np.argsort(max_properties["prominences"])[-num_maxima:]
+        max_peaks = max_peaks[top_max_indices]
+        max_peaks = np.sort(max_peaks)  # Re-sort by position
+    
+    if len(min_peaks) > num_minima:
+        top_min_indices = np.argsort(min_properties["prominences"])[-num_minima:]
+        min_peaks = min_peaks[top_min_indices]
+        min_peaks = np.sort(min_peaks)  # Re-sort by position
+    
+    # Get values at peak positions
+    max_values = array_1d[max_peaks]
+    min_values = array_1d[min_peaks]
+    
+    return max_peaks, max_values, min_peaks, min_values
+
+
 def draw_pixel_map(
     pixel_map_2d: np.ndarray,
     colorscale: list = None,
     show_values: bool = True,
     height: int = None,
     width: int = None,
+    value_range: tuple = None,
 ) -> None:
     """Render a 2D firmness pixel map using Plotly heatmap.
     
     Parameters
     ----------
     pixel_map_2d : np.ndarray
-        2D array (rows x cols) with integer values 0-4
+        2D array (rows x cols) with values
     colorscale : list, optional
         Custom colorscale as [[position, color], ...] where position is 0.0-1.0
         and color is hex/rgb/rgba. If None, uses default blue gradient.
@@ -145,7 +365,31 @@ def draw_pixel_map(
         Chart height in pixels. If None, auto-calculated from array size.
     width : int, optional
         Chart width in pixels. If None, auto-calculated from array size.
+    value_range : tuple, optional
+        Value range for the colorscale. Can be:
+        - (min, max): explicit range like (0, 4) or (1, 100)
+        - "auto": automatically uses (data.min(), data.max())
+        - None: defaults to (0, 4) for backward compatibility
     """
+    # Default colorscale if none provided (blue gradient for firmness levels 0-4)
+    if colorscale is None:
+        colorscale = [
+            [0.0, "#e3f2fd"],    # 0 - Very Soft (light blue)
+            [0.25, "#90caf9"],   # 1 - Soft (medium blue)
+            [0.5, "#42a5f5"],    # 2 - Medium (blue)
+            [0.75, "#1e88e5"],   # 3 - Firm (dark blue)
+            [1.0, "#0d47a1"],    # 4 - Very Firm (darkest blue)
+        ]
+    
+    # Determine value range for colorscale
+    if value_range == "auto":
+        zmin = float(np.min(pixel_map_2d))
+        zmax = float(np.max(pixel_map_2d))
+    elif value_range is not None:
+        zmin, zmax = value_range
+    else:
+        # Default to 0-4 for backward compatibility
+        zmin, zmax = 0, 4
     
     rows, cols = pixel_map_2d.shape
     
@@ -154,6 +398,15 @@ def draw_pixel_map(
     plot_width = cols * cell_size + 40  # Add margin
     plot_height = rows * cell_size + 40  # Add margin
     
+    # If width is specified, calculate proportional height for square cells
+    if width is not None:
+        # Calculate cell size based on fixed width
+        actual_cell_size = (width - 40) / cols
+        plot_height = rows * actual_cell_size + 40
+        plot_width = width
+    
+    pixel_map_2d_rounded = np.round(pixel_map_2d, decimals=2, out=pixel_map_2d)
+
     # Create heatmap
     fig = go.Figure(
         data=go.Heatmap(
@@ -161,10 +414,10 @@ def draw_pixel_map(
             x=list(range(cols)),  # 0-indexed x positions
             y=list(range(1, rows + 1)),  # 1-indexed y positions (1, 2, 3, ...)
             colorscale=colorscale,
-            zmin=0,
-            zmax=4,
+            zmin=zmin,
+            zmax=zmax,
             showscale=False,  # Hide colorscale bar
-            text=pixel_map_2d if show_values else None,
+            text=pixel_map_2d_rounded if show_values else None,
             texttemplate="%{text}" if show_values else None,
             textfont=dict(size=12, color="white"),
             hoverinfo="none",  # Disable hover
@@ -191,7 +444,6 @@ def draw_pixel_map(
             tickmode='array',
             tickvals=list(range(1, rows+1)),  # Show all ticks (1 to rows)
             dtick=1,  # Show every row number
-            ticks="",  # Remove tick marks
             showline=False,  # Hide y-axis line
             zeroline=False,  # Hide zero line
             autorange="reversed",  # Row 1 at top

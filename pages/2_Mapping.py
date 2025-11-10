@@ -1,5 +1,8 @@
 import streamlit as st
+import numpy as np
 import common as ui
+import csv_loader
+import data_processing as dp
 
 ui.apply_base_ui("Mapping")
 
@@ -7,37 +10,154 @@ ui.apply_base_ui("Mapping")
 if "answers" not in st.session_state:
     st.session_state.answers = {"sleeper_1": {}, "sleeper_2": {}}
 
-st.write("Upload pressure map CSV files for your profiles.")
+st.write("Upload pressure map CSV files for your profiles. You can upload multiple files to merge them.")
 
-st.write("")  # adds spacing
-st.write("")
+# Get names for labels
+left_name = st.session_state.answers.get("sleeper_1", {}).get("setting1", "Sleeper 1")
+right_name = st.session_state.answers.get("sleeper_2", {}).get("setting1", "Sleeper 2")
 
 # Render dual column headers
-col_left, col_right = ui.render_dual_column_headers("Sleeper 1", "Sleeper 2")
+col_left, col_right = ui.render_dual_column_headers(left_name, right_name)
 
 with col_left:
-    st.subheader("Upload Pressure Map")
-    left_file = st.file_uploader(
-        "Choose CSV file",
-        type="csv",
-        key="left_csv",
-        label_visibility="collapsed"
-    )
-    if left_file:
-        st.session_state.answers["sleeper_1"]["csv_file"] = left_file
-        st.success("File uploaded!")
+    
+    # Check if data is already loaded
+    existing_data = csv_loader.get_csv_data_from_session("sleeper_1")
+    
+    if existing_data:
+        # Downsample the pressure map
+        downsampled = dp.downsample_pressure_map(existing_data['sensel_data'], target_shape=(17, 9))
+
+        # Display the downsampled pressure map heatmap
+        dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto")
+        
+        # Show uploaded file info and delete button
+        st.write(f"**Files:** {', '.join(existing_data['filenames'])}")
+        
+        if st.button("Delete and Re-upload", key="delete_left", use_container_width=True):
+            csv_loader.clear_csv_data("sleeper_1")
+            st.rerun()
+        
+        # Flip button to rotate 180 degrees
+        if st.button("Flip 180°", key="flip_left", use_container_width=True):
+            # Rotate the original data 180 degrees
+            flipped_data = np.rot90(existing_data['sensel_data'], k=2)
+            # Update the stored data
+            csv_loader.store_csv_data_in_session(
+                flipped_data,
+                existing_data['statistics'],
+                existing_data['filename'],
+                existing_data['filenames'],
+                side_key="sleeper_1"
+            )
+            st.rerun()
+        
+        # Display statistics in expander
+        with st.expander("View Pressure Map Statistics"):
+            for key, values in existing_data['statistics'].items():
+                if len(values) == 1:
+                    st.write(f"- {key}: {values[0]}")
+                else:
+                    st.write(f"- {key}: {values}")
+    else:
+        # Show file uploader
+        left_files = st.file_uploader(
+            "Choose CSV file(s) for Sleeper 1",
+            type="csv",
+            key="left_csv",
+            label_visibility="collapsed",
+            accept_multiple_files=True
+        )
+        
+        if left_files:
+            try:
+                # Load and process the CSV files
+                merged_data, statistics, filename, filenames = csv_loader.load_csv_files(left_files)
+                
+                # Store in session state
+                csv_loader.store_csv_data_in_session(
+                    merged_data, 
+                    statistics, 
+                    filename, 
+                    filenames, 
+                    side_key="sleeper_1"
+                )
+                st.rerun()
+                            
+            except Exception as e:
+                st.error(f"Error loading files: {e}")
 
 with col_right:
-    st.subheader("Upload Pressure Map")
-    right_file = st.file_uploader(
-        "Choose CSV file",
-        type="csv",
-        key="right_csv",
-        label_visibility="collapsed"
-    )
-    if right_file:
-        st.session_state.answers["sleeper_2"]["csv_file"] = right_file
-        st.success("File uploaded!")
+    # Only show right side if show_right is enabled
+    if st.session_state.get("show_right", False):
+        
+        # Check if data is already loaded
+        existing_data = csv_loader.get_csv_data_from_session("sleeper_2")
+        
+        if existing_data:
+            # Downsample the pressure map
+            downsampled = dp.downsample_pressure_map(existing_data['sensel_data'], target_shape=(17, 9))
+
+            # Display the downsampled pressure map heatmap
+            dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto")
+            
+            # Show uploaded file info and delete button
+            st.write(f"**Files:** {', '.join(existing_data['filenames'])}")
+            
+            if st.button("Delete and Re-upload", key="delete_right", use_container_width=True):
+                csv_loader.clear_csv_data("sleeper_2")
+                st.rerun()
+            
+            # Flip button to rotate 180 degrees
+            if st.button("Flip 180°", key="flip_right", use_container_width=True):
+                # Rotate the original data 180 degrees
+                flipped_data = np.rot90(existing_data['sensel_data'], k=2)
+                # Update the stored data
+                csv_loader.store_csv_data_in_session(
+                    flipped_data,
+                    existing_data['statistics'],
+                    existing_data['filename'],
+                    existing_data['filenames'],
+                    side_key="sleeper_2"
+                )
+                st.rerun()
+            
+            # Display statistics in expander
+            with st.expander("View Pressure Map Statistics"):
+                for key, values in existing_data['statistics'].items():
+                    if len(values) == 1:
+                        st.write(f"- {key}: {values[0]}")
+                    else:
+                        st.write(f"- {key}: {values}")
+        else:
+            # Show file uploader
+            right_files = st.file_uploader(
+                "Choose CSV file(s) for Sleeper 2",
+                type="csv",
+                key="right_csv",
+                label_visibility="collapsed",
+                accept_multiple_files=True
+            )
+            
+            if right_files:
+                try:
+                    # Load and process the CSV files
+                    merged_data, statistics, filename, filenames = csv_loader.load_csv_files(right_files)
+                    
+                    # Store in session state
+                    csv_loader.store_csv_data_in_session(
+                        merged_data, 
+                        statistics, 
+                        filename, 
+                        filenames, 
+                        side_key="sleeper_2"
+                    )
+                    st.rerun()
+                                
+                except Exception as e:
+                    st.error(f"Error loading files: {e}")
+    else:
+        st.subheader("Add a second sleeper to upload CSV files")
 
 st.markdown("---")
 
