@@ -1,7 +1,12 @@
 name: app_environment
 channels:
   - snowflake
+  - conda-forge
 dependencies:
   - plotly=6.3.0
   - snowflake-snowpark-python=
   - streamlit=1.50.0
+  - scipy>=1.11.0
+  - numpy>=1.21
+  - pandas>=2.0.0
+  - pillow>=9.0
