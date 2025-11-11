@@ -45,10 +45,7 @@ with col_right:
 st.markdown("---")
 st.write("Use the sidebar or the NEXT button below to move through the app.")
 
-# Debug: Display collected data
-st.markdown("---")
-st.subheader("Debug: Session Data")
-st.json(st.session_state.answers)
+
 
 def go_mapping():
     st.switch_page("pages/2_Mapping.py")

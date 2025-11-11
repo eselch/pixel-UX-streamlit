@@ -181,10 +181,7 @@ with col_right:
 
 st.markdown("---")
 
-# Debug: Display collected data
-st.markdown("---")
-st.subheader("Debug: Session Data")
-st.json(st.session_state.answers)
+
 
 def go_prev():
     st.switch_page("pages/1_Profile.py")

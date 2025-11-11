@@ -250,8 +250,6 @@ with col1:
     show_curve_plot(side_key=side_key, height=200)# Debug: Display collected data
 
 st.markdown("---")
-st.subheader("Debug: Session Data")
-st.json(st.session_state.answers)
 
 
 def go_prev():
