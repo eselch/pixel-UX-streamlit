@@ -201,6 +201,11 @@ with col1:
         left_lut = get_interpolated_curve_lut(left_key)
         right_lut = get_interpolated_curve_lut(right_key)
         
+        # Ensure LUTs are valid before proceeding
+        if left_lut is None or right_lut is None:
+            st.error("Error generating curve data. Please go back to Profile page.")
+            st.stop()
+        
         # Get width per sleeper (half the total bed width)
         total_width = dp.get_array_width()
         width_per_sleeper = total_width // 2
@@ -214,6 +219,11 @@ with col1:
         
         # Generate high-resolution LUT from interpolated curve for pixel map
         curve_lut = get_interpolated_curve_lut(side_key)
+        
+        # Ensure LUT is valid before proceeding
+        if curve_lut is None:
+            st.error("Error generating curve data. Please go back to Profile page.")
+            st.stop()
         
         # Get width per sleeper (half the total bed width)
         total_width = dp.get_array_width()

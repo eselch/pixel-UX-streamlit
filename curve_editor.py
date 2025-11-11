@@ -123,28 +123,33 @@ def get_interpolated_curve_lut(
     np.ndarray
         1D array of length array_length with interpolated firmness values
     """
-    if array_length is None:
-        array_length = dp.get_array_length()
-    
-    vmin, vmax = value_range
-    x_domain = (1, array_length)
-    
-    # Get control point positions and values
-    xs, ys_float, xmin, xmax = _get_curve_data(side_key, array_length, x_domain, num_points)
-    
-    # Round control point y values to integers
-    ys = np.round(ys_float).astype(int)
-    ys = np.clip(ys, vmin, vmax)
-    
-    # Evaluate the smooth curve at each integer position
-    lut_x = np.arange(1, array_length + 1)
-    lut_y = _piecewise_hermite_smooth(xs, ys, lut_x)
-    lut_y = np.clip(lut_y, vmin, vmax)
-    
-    # Round to integers for the LUT
-    lut_y = np.round(lut_y).astype(int)
-    
-    return lut_y
+    try:
+        if array_length is None:
+            array_length = dp.get_array_length()
+        
+        vmin, vmax = value_range
+        x_domain = (1, array_length)
+        
+        # Get control point positions and values
+        xs, ys_float, xmin, xmax = _get_curve_data(side_key, array_length, x_domain, num_points)
+        
+        # Round control point y values to integers
+        ys = np.round(ys_float).astype(int)
+        ys = np.clip(ys, vmin, vmax)
+        
+        # Evaluate the smooth curve at each integer position
+        lut_x = np.arange(1, array_length + 1)
+        lut_y = _piecewise_hermite_smooth(xs, ys, lut_x)
+        lut_y = np.clip(lut_y, vmin, vmax)
+        
+        # Round to integers for the LUT
+        lut_y = np.round(lut_y).astype(int)
+        
+        return lut_y
+    except Exception as e:
+        # Return None if there's any error - will be caught by caller
+        print(f"Error in get_interpolated_curve_lut for {side_key}: {e}")
+        return None
 
 
 def _get_curve_data(
