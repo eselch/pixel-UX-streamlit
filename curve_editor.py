@@ -196,9 +196,24 @@ def _get_curve_data(
     else:
         master_array = np.asarray(master_array)
     
-    # Default control x positions (evenly spaced across domain)
-    xs = np.linspace(xmin, xmax, num_points)
-    xs = np.round(xs).astype(int)
+    # Check if a custom number of control points was set from pressure map
+    if "answers" in st.session_state and side_key in st.session_state.answers:
+        stored_num_points = st.session_state.answers[side_key].get("num_control_points")
+        if stored_num_points is not None:
+            num_points = stored_num_points
+    
+    # Check if custom control points exist from pressure map
+    custom_points = None
+    if "answers" in st.session_state and side_key in st.session_state.answers:
+        custom_points = st.session_state.answers[side_key].get("curve_control_points")
+    
+    if custom_points is not None and len(custom_points.get("x", [])) == num_points:
+        # Use custom control points from pressure map analysis
+        xs = np.array(custom_points["x"], dtype=int)
+    else:
+        # Default control x positions (evenly spaced across domain)
+        xs = np.linspace(xmin, xmax, num_points)
+        xs = np.round(xs).astype(int)
     
     # Get y values from master array at control point positions
     # Directly sample the array at the xs positions (no interpolation)
@@ -348,7 +363,7 @@ def show_curve_plot(
         y=ys,
         mode='markers',
         name='Control Points',
-        marker=dict(color='#0492a8', size=10)
+        marker=dict(color='#0492a8', size=num_points)
     ))
     
     # Add labels above each control point

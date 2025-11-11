@@ -124,6 +124,44 @@ with col2:
         st.rerun()
     
     st.write("")  # adds spacing
+    
+    # Add remap range control (only show if CSV data exists)
+    if "csv_data" in st.session_state and side_key in st.session_state.csv_data:
+        st.markdown("**Pressure Map Range**")
+        
+        # Get current remap range from session state
+        current_remap_range = st.session_state.answers.get(side_key, {}).get("remap_range", "high")
+        
+        # Create selectbox for remap range
+        remap_range = st.selectbox(
+            "Pressure Map Range",
+            options=["low", "high"],
+            format_func=lambda x: "Low (1-3)" if x == "low" else "High (0-4)",
+            index=0 if current_remap_range == "low" else 1,
+            label_visibility="collapsed",
+            key=f"remap_range_selector_{side_key}"
+        )
+        
+        # If remap range changed, reapply the pressure map
+        if remap_range != current_remap_range:
+            # Get the downsampled pressure map from session state
+            if side_key in st.session_state.csv_data:
+                sensel_data = st.session_state.csv_data[side_key]["sensel_data"]
+                downsampled = dp.downsample_pressure_map(sensel_data, target_shape=(17, 9))
+                
+                # Get the current number of control points
+                num_control_points = st.session_state.answers.get(side_key, {}).get("num_control_points", 6)
+                
+                # Reapply with new remap range
+                dp.apply_pressure_map_to_curve(
+                    downsampled, 
+                    side_key=side_key, 
+                    num_control_points=num_control_points,
+                    remap_range=remap_range
+                )
+                st.rerun()
+        
+        st.write("")  # adds spacing
 
     # Show curve controls
     show_curve_controls(side_key=side_key)

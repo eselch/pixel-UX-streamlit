@@ -50,6 +50,11 @@ with col_left:
                 existing_data['filenames'],
                 side_key="sleeper_1"
             )
+            
+            # Reapply to curve editor with flipped data
+            downsampled = dp.downsample_pressure_map(flipped_data, target_shape=(17, 9))
+            dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_1", num_control_points=6)
+            
             st.rerun()
         
         # Display statistics in expander
@@ -82,6 +87,11 @@ with col_left:
                     filenames, 
                     side_key="sleeper_1"
                 )
+                
+                # Downsample and apply to curve editor
+                downsampled = dp.downsample_pressure_map(merged_data, target_shape=(17, 9))
+                dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_1", num_control_points=6)
+                
                 st.rerun()
                             
             except Exception as e:
@@ -120,6 +130,11 @@ with col_right:
                     existing_data['filenames'],
                     side_key="sleeper_2"
                 )
+                
+                # Reapply to curve editor with flipped data
+                downsampled = dp.downsample_pressure_map(flipped_data, target_shape=(17, 9))
+                dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_2", num_control_points=6)
+                
                 st.rerun()
             
             # Display statistics in expander
@@ -152,6 +167,11 @@ with col_right:
                         filenames, 
                         side_key="sleeper_2"
                     )
+                    
+                    # Downsample and apply to curve editor
+                    downsampled = dp.downsample_pressure_map(merged_data, target_shape=(17, 9))
+                    dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_2", num_control_points=6)
+                    
                     st.rerun()
                                 
                 except Exception as e:

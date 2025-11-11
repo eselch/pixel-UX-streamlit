@@ -322,6 +322,26 @@ def find_extrema(
         distance=distance
     )
     
+    # If we don't find enough peaks, try with lower prominence
+    attempts = 0
+    while (len(max_peaks) < num_maxima or len(min_peaks) < num_minima) and attempts < 3:
+        attempts += 1
+        prominence = prominence * 0.5  # Reduce prominence requirement
+        
+        if len(max_peaks) < num_maxima:
+            max_peaks, max_properties = find_peaks(
+                array_1d, 
+                prominence=prominence,
+                distance=distance
+            )
+        
+        if len(min_peaks) < num_minima:
+            min_peaks, min_properties = find_peaks(
+                -array_1d,
+                prominence=prominence,
+                distance=distance
+            )
+    
     # Sort by prominence and take top N
     if len(max_peaks) > num_maxima:
         top_max_indices = np.argsort(max_properties["prominences"])[-num_maxima:]
@@ -338,6 +358,145 @@ def find_extrema(
     min_values = array_1d[min_peaks]
     
     return max_peaks, max_values, min_peaks, min_values
+
+
+def apply_pressure_map_to_curve(
+    pressure_map_2d: np.ndarray,
+    side_key: str = "sleeper_1",
+    num_control_points: int = 6,
+    remap_range: str = "high"
+) -> None:
+    """Apply pressure map data to the curve editor for a sleeper.
+    
+    This function:
+    1. Converts the 2D pressure map to a 1D array (max per row)
+    2. Normalizes the 1D array to specified range and writes to master_array (inverted)
+    3. Finds optimal control points that best fit the pressure data
+    
+    Parameters
+    ----------
+    pressure_map_2d : np.ndarray
+        2D pressure map array, typically shape (17, 9)
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    num_control_points : int
+        Number of control points to use for curve fitting (default 6)
+    remap_range : str
+        Remap range: "low" (1-3) or "high" (0-4), default "high"
+    
+    Notes
+    -----
+    The master array is updated with normalized pressure values (inverted).
+    High pressure areas become soft (0), low pressure areas become firm (3 or 4).
+    Control points are positioned to minimize error between the curve and actual data.
+    Uses an optimization approach to find the best control point positions.
+    """
+    # Convert 2D pressure map to 1D array (max per row)
+    pressure_1d = pressure_map_to_1d_array(pressure_map_2d)
+    
+    # Determine remap range
+    if remap_range == "low":
+        range_min, range_max = 1, 3
+    else:  # "high"
+        range_min, range_max = 0, 4
+    
+    # Normalize pressure_1d to the specified range for master_array
+    p_min = np.min(pressure_1d)
+    p_max = np.max(pressure_1d)
+    
+    if p_max > p_min:
+        # Scale to specified range
+        normalized = range_min + (range_max - range_min) * (pressure_1d - p_min) / (p_max - p_min)
+    else:
+        # All values are the same, set to middle value
+        mid_value = (range_min + range_max) / 2.0
+        normalized = np.full_like(pressure_1d, mid_value)
+    
+    # INVERT: high pressure (4) becomes soft (0), low pressure (0) becomes firm (4)
+    inverted = range_max + range_min - normalized
+    
+    # Round to integers and clip to valid range
+    master_array = np.round(inverted).astype(int)
+    master_array = np.clip(master_array, range_min, range_max)
+    
+    # Store the master array
+    set_master_array(side_key, master_array)
+    
+    # Find optimal control point positions using curve fitting
+    try:
+        from scipy.optimize import minimize
+        
+        array_length = len(pressure_1d)
+        
+        # Start with evenly spaced control points
+        control_x_initial = np.linspace(0, array_length - 1, num_control_points)
+        control_x_initial = np.round(control_x_initial).astype(int)
+        
+        def objective(x_positions):
+            """Calculate error between interpolated curve and actual data."""
+            x_positions = np.clip(np.round(x_positions), 0, array_length - 1).astype(int)
+            
+            # Ensure positions are unique and sorted
+            x_positions = np.unique(x_positions)
+            if len(x_positions) < num_control_points:
+                return 1e10  # Penalty for duplicate positions
+            
+            # Get y values at control positions (use inverted values)
+            y_control = inverted[x_positions]
+            
+            # Interpolate to get full curve
+            x_full = np.arange(array_length)
+            y_interp = np.interp(x_full, x_positions, y_control)
+            
+            # Calculate mean squared error
+            mse = np.mean((y_interp - inverted) ** 2)
+            return mse
+        
+        # Optimize control point positions
+        result = minimize(
+            objective,
+            control_x_initial.astype(float),
+            method='Powell',
+            options={'maxiter': 100, 'disp': False}
+        )
+        
+        # Get optimized positions
+        control_x = np.clip(np.round(result.x), 0, array_length - 1).astype(int)
+        control_x = np.unique(control_x)  # Remove duplicates
+        control_x = np.sort(control_x)  # Ensure sorted
+        
+        # If we lost points due to deduplication, fill in with evenly spaced
+        if len(control_x) < num_control_points:
+            control_x = control_x_initial
+        
+        # Get the master array values at control positions
+        control_y = master_array[control_x]
+        
+        # Store control points in session state (1-indexed for x positions)
+        if "answers" not in st.session_state:
+            st.session_state.answers = {"sleeper_1": {}, "sleeper_2": {}}
+        
+        if side_key not in st.session_state.answers:
+            st.session_state.answers[side_key] = {}
+        
+        # Convert to 1-indexed for row numbers
+        control_x_indexed = (control_x + 1).tolist()
+        
+        st.session_state.answers[side_key]["curve_control_points"] = {
+            "x": control_x_indexed,
+            "y": control_y.tolist()
+        }
+        
+        # Store the number of control points used
+        st.session_state.answers[side_key]["num_control_points"] = num_control_points
+        
+        # Store the remap range used
+        st.session_state.answers[side_key]["remap_range"] = remap_range
+        
+    except Exception as e:
+        # If extrema finding fails, don't store control points
+        # Master array is still set from normalized pressure data
+        pass
 
 
 def draw_pixel_map(
