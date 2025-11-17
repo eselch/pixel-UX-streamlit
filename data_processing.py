@@ -408,6 +408,7 @@ def draw_pixel_map(
     width: int = None,
     value_range: tuple = None,
     use_container_width: bool = False,
+    title: str = None,
 ) -> None:
     """Render a 2D firmness pixel map using Plotly heatmap.
     
@@ -431,6 +432,8 @@ def draw_pixel_map(
         - (min, max): explicit range like (0, 4) or (1, 100)
         - "auto": automatically uses (data.min(), data.max())
         - None: defaults to (0, 4) for backward compatibility
+    title : str, optional
+        Title to display above the heatmap
     """
     # Default colorscale if none provided (blue gradient for firmness levels 0-4)
     if colorscale is None:
@@ -494,6 +497,12 @@ def draw_pixel_map(
     
     # Update layout with square aspect ratio
     fig.update_layout(
+        title=dict(
+            text=title,
+            x=0.5,
+            xanchor='center',
+            font=dict(size=20)
+        ) if title else None,
         xaxis=dict(
             side="top",
             showgrid=False,
@@ -507,6 +516,7 @@ def draw_pixel_map(
         yaxis=dict(
             showgrid=False,
             showticklabels=True,  # Show y-axis numbers (row labels)
+            ticks="",  # Remove tick marks
             tickmode='array',
             tickvals=list(range(1, rows+1)),  # Show all ticks (1 to rows)
             dtick=1,  # Show every row number
@@ -519,7 +529,7 @@ def draw_pixel_map(
         ),
         height=plot_height if height is None else height,
         width=fig_width,
-        margin=dict(l=20, r=5, t=5, b=5),  # Increased left margin for labels
+        margin=dict(l=20, r=5, t=40 if title else 5, b=5),  # Increased top margin for title
         plot_bgcolor="white",
         showlegend=False,
     )

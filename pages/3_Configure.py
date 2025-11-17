@@ -190,13 +190,6 @@ with col1:
         left_name = st.session_state.answers.get(left_key, {}).get("setting1", "Sleeper " + left_key[-1])
         right_name = st.session_state.answers.get(right_key, {}).get("setting1", "Sleeper " + right_key[-1])
         
-        # Display names above heatmap
-        _, name_col1, name_col2, _ = st.columns(4)
-        with name_col1:
-            st.markdown(f"<h3 style='text-align: center;'>{left_name}</h3>", unsafe_allow_html=True)
-        with name_col2:
-            st.markdown(f"<h3 style='text-align: center;'>{right_name}</h3>", unsafe_allow_html=True)
-        
         # Generate interpolated curves for both sleepers
         left_lut = get_interpolated_curve_lut(left_key)
         right_lut = get_interpolated_curve_lut(right_key)
@@ -212,10 +205,10 @@ with col1:
         
         # Create dual sleeper pixel map
         pixel_map_2d = dp.pixel_map_dual_sleeper(left_lut, right_lut, width_per_sleeper)
+        heatmap_title = f"{left_name}  |  {right_name}"
     else:
         # Single sleeper mode - show same data on both sides
         sleeper_name = st.session_state.answers.get(side_key, {}).get("setting1", current_sleeper)
-        st.markdown(f"<h3 style='text-align: center;'>{sleeper_name}</h3>", unsafe_allow_html=True)
         
         # Generate high-resolution LUT from interpolated curve for pixel map
         curve_lut = get_interpolated_curve_lut(side_key)
@@ -231,6 +224,7 @@ with col1:
         
         # Use the same data for both sides
         pixel_map_2d = dp.pixel_map_dual_sleeper(curve_lut, curve_lut, width_per_sleeper)
+        heatmap_title = sleeper_name
 
     # Custom colorscale: maps firmness values 0-4 to specific Pantone colors
     # 0 = Very Soft (Teal), 1 = Soft (Tibetan Stone), 2 = Medium (White),
@@ -250,6 +244,7 @@ with col1:
             pixel_map_2d,
             height=500,
             colorscale=custom_colorscale,
+            title=heatmap_title,
         )
 
     curve_cols = st.columns([1, 7, 1])
