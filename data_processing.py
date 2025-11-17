@@ -263,7 +263,7 @@ def apply_pressure_map_to_curve(
     pressure_map_2d: np.ndarray,
     side_key: str = "sleeper_1",
     num_control_points: int = 6,
-    remap_range: str = "high"
+    remap_range: str = "low"
 ) -> None:
     """Apply pressure map data to the curve editor for a sleeper.
     
@@ -281,12 +281,12 @@ def apply_pressure_map_to_curve(
     num_control_points : int
         Number of control points to use for curve fitting (default 6)
     remap_range : str
-        Remap range: "low" (1-3) or "high" (0-4), default "high"
+        Remap range: "extra_low" (1-2), "low" (1-3), or "high" (0-4), default "low"
     
     Notes
     -----
     The master array is updated with normalized pressure values (inverted).
-    High pressure areas become soft (0), low pressure areas become firm (3 or 4).
+    High pressure areas become soft (0-2), low pressure areas become firm (1-4).
     Control points are positioned to minimize error between the curve and actual data.
     Uses an optimization approach to find the best control point positions.
     """
@@ -294,7 +294,9 @@ def apply_pressure_map_to_curve(
     pressure_1d = pressure_map_to_1d_array(pressure_map_2d)
     
     # Determine remap range
-    if remap_range == "low":
+    if remap_range == "extra_low":
+        range_min, range_max = 1, 2
+    elif remap_range == "low":
         range_min, range_max = 1, 3
     else:  # "high"
         range_min, range_max = 0, 4
@@ -405,6 +407,7 @@ def draw_pixel_map(
     height: int = None,
     width: int = None,
     value_range: tuple = None,
+    use_container_width: bool = False,
 ) -> None:
     """Render a 2D firmness pixel map using Plotly heatmap.
     
@@ -462,6 +465,11 @@ def draw_pixel_map(
         actual_cell_size = (width - 40) / cols
         plot_height = rows * actual_cell_size + 40
         plot_width = width
+
+    # If using container width, let Streamlit manage figure width
+    fig_width = plot_width if width is None else width
+    if use_container_width:
+        fig_width = None
     
     pixel_map_2d_rounded = np.round(pixel_map_2d, decimals=2, out=pixel_map_2d)
 
@@ -510,13 +518,13 @@ def draw_pixel_map(
             scaleratio=1,
         ),
         height=plot_height if height is None else height,
-        width=plot_width if width is None else width,
+        width=fig_width,
         margin=dict(l=20, r=5, t=5, b=5),  # Increased left margin for labels
         plot_bgcolor="white",
         showlegend=False,
     )
     
-    st.plotly_chart(fig, use_container_width=False, config={'staticPlot': True})
+    st.plotly_chart(fig, use_container_width=use_container_width, config={'staticPlot': True})
 
 
 def initialize_master_array(side_key: str, firmness_value: int = 2, array_length: int = None) -> np.ndarray:

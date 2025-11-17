@@ -18,7 +18,7 @@ st.session_state.setdefault("current_configure_sleeper", "Sleeper 1")
 st.session_state.setdefault("sleeper_1_on_left", True)
 
 #Column Layout
-col1, col2 = st.columns([3, 1])
+col1, col2 = st.columns([2, 1])
 
 # Render controls first (col2) to ensure updates happen before plot
 with col2:
@@ -127,17 +127,17 @@ with col2:
     
     # Add remap range control (only show if CSV data exists)
     if "csv_data" in st.session_state and side_key in st.session_state.csv_data:
-        st.markdown("**Pressure Map Range**")
+        st.subheader("Pressure Map Range")
         
         # Get current remap range from session state
-        current_remap_range = st.session_state.answers.get(side_key, {}).get("remap_range", "high")
+        current_remap_range = st.session_state.answers.get(side_key, {}).get("remap_range", "low")
         
         # Create selectbox for remap range
         remap_range = st.selectbox(
             "Pressure Map Range",
-            options=["low", "high"],
-            format_func=lambda x: "Low (1-3)" if x == "low" else "High (0-4)",
-            index=0 if current_remap_range == "low" else 1,
+            options=["extra_low", "low", "high"],
+            format_func=lambda x: "Extra Low (1-2)" if x == "extra_low" else ("Low (1-3)" if x == "low" else "High (0-4)"),
+            index=0 if current_remap_range == "extra_low" else (1 if current_remap_range == "low" else 2),
             label_visibility="collapsed",
             key=f"remap_range_selector_{side_key}"
         )
@@ -243,14 +243,19 @@ with col1:
         [1.0, "#0A2734"]
     ]
 
-    # Center heatmap and curve plot within the layout
-    heatmap_cols = st.columns([1, 4, 1])
+    # Center the heatmap and curve plot using Streamlit column layout (works on Cloud)
+    heatmap_cols = st.columns([1, 7, 1])
     with heatmap_cols[1]:
-        dp.draw_pixel_map(pixel_map_2d, height=450, colorscale=custom_colorscale)
+        dp.draw_pixel_map(
+            pixel_map_2d,
+            height=500,
+            colorscale=custom_colorscale,
+            use_container_width=True,
+        )
 
-    curve_cols = st.columns([1, 4, 1])
+    curve_cols = st.columns([1, 7, 1])
     with curve_cols[1]:
-        show_curve_plot(side_key=side_key, height=200)
+        show_curve_plot(side_key=side_key, height=200, width=None)
 
 st.markdown("---")
 
