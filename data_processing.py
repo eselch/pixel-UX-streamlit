@@ -7,7 +7,6 @@ and other downstream visualizations.
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
-from scipy.signal import find_peaks
 
 # Master array configuration
 MASTER_VALUE_RANGE = (0, 4)  # Value range for array elements
@@ -258,106 +257,6 @@ def pressure_map_to_1d_array(pressure_map_2d: np.ndarray) -> np.ndarray:
     
     # Get max value from each row (axis=1)
     return np.max(pressure_map_2d, axis=1)
-
-
-def find_extrema(
-    array_1d: np.ndarray,
-    num_maxima: int = 3,
-    num_minima: int = 3,
-    prominence: float = None,
-    distance: int = None
-) -> tuple:
-    """Find local maxima and minima in a 1D array.
-    
-    Uses peak detection to identify the most prominent high and low points.
-    You can control how many peaks are found by adjusting prominence or distance.
-    
-    Parameters
-    ----------
-    array_1d : np.ndarray
-        1D array to analyze
-    num_maxima : int
-        Number of maximum points to find (returns top N by prominence)
-    num_minima : int
-        Number of minimum points to find (returns top N by prominence)
-    prominence : float, optional
-        Required prominence of peaks. Higher values = fewer, more prominent peaks.
-        If None, auto-calculated based on data range.
-    distance : int, optional
-        Minimum distance between peaks (in indices). If None, no constraint.
-    
-    Returns
-    -------
-    tuple
-        (maxima_indices, maxima_values, minima_indices, minima_values)
-        Each as numpy arrays, sorted by position
-        
-    Examples
-    --------
-    >>> data = np.array([1, 3, 1, 5, 2, 4, 1, 3, 1])
-    >>> max_idx, max_val, min_idx, min_val = find_extrema(data, num_maxima=2, num_minima=2)
-    >>> print(max_idx)  # Indices of top 2 maxima
-    [3 5]
-    >>> print(max_val)  # Values at those indices
-    [5 4]
-    """
-    array_1d = np.asarray(array_1d)
-    
-    # Auto-calculate prominence if not specified
-    if prominence is None:
-        data_range = np.ptp(array_1d)  # peak-to-peak (max - min)
-        prominence = data_range * 0.1  # 10% of range
-    
-    # Find maxima
-    max_peaks, max_properties = find_peaks(
-        array_1d, 
-        prominence=prominence,
-        distance=distance
-    )
-    
-    # Find minima (invert array and find peaks)
-    min_peaks, min_properties = find_peaks(
-        -array_1d,  # Invert to find minima
-        prominence=prominence,
-        distance=distance
-    )
-    
-    # If we don't find enough peaks, try with lower prominence
-    attempts = 0
-    while (len(max_peaks) < num_maxima or len(min_peaks) < num_minima) and attempts < 3:
-        attempts += 1
-        prominence = prominence * 0.5  # Reduce prominence requirement
-        
-        if len(max_peaks) < num_maxima:
-            max_peaks, max_properties = find_peaks(
-                array_1d, 
-                prominence=prominence,
-                distance=distance
-            )
-        
-        if len(min_peaks) < num_minima:
-            min_peaks, min_properties = find_peaks(
-                -array_1d,
-                prominence=prominence,
-                distance=distance
-            )
-    
-    # Sort by prominence and take top N
-    if len(max_peaks) > num_maxima:
-        top_max_indices = np.argsort(max_properties["prominences"])[-num_maxima:]
-        max_peaks = max_peaks[top_max_indices]
-        max_peaks = np.sort(max_peaks)  # Re-sort by position
-    
-    if len(min_peaks) > num_minima:
-        top_min_indices = np.argsort(min_properties["prominences"])[-num_minima:]
-        min_peaks = min_peaks[top_min_indices]
-        min_peaks = np.sort(min_peaks)  # Re-sort by position
-    
-    # Get values at peak positions
-    max_values = array_1d[max_peaks]
-    min_values = array_1d[min_peaks]
-    
-    return max_peaks, max_values, min_peaks, min_values
 
 
 def apply_pressure_map_to_curve(
