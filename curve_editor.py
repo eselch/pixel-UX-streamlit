@@ -362,6 +362,63 @@ def show_curve_plot(
         line=dict(color='#0492a8', width=2)
     ))
     
+    # Add pressure map data points if available, red dot overlay
+    if "csv_data" in st.session_state and side_key in st.session_state.csv_data:
+        try:
+            # Get the downsampled pressure map
+            sensel_data = st.session_state.csv_data[side_key]["sensel_data"]
+            downsampled = dp.downsample_pressure_map(sensel_data, target_shape=(array_length if array_length else dp.get_array_length(), 9))
+            
+            # Convert to 1D using max per row
+            pressure_1d = dp.pressure_map_to_1d_array(downsampled)
+            
+            # Get the remap range from session state
+            remap_range = st.session_state.answers.get(side_key, {}).get("remap_range", "low")
+            
+            # Determine remap range
+            if remap_range == "extra_low":
+                range_min, range_max = 1, 2
+            elif remap_range == "low":
+                range_min, range_max = 1, 3
+            else:  # "high"
+                range_min, range_max = 0, 4
+            
+            # Normalize pressure_1d to the specified range
+            p_min = np.min(pressure_1d)
+            p_max = np.max(pressure_1d)
+            
+            if p_max > p_min:
+                # Scale to specified range
+                normalized = range_min + (range_max - range_min) * (pressure_1d - p_min) / (p_max - p_min)
+            else:
+                # All values are the same, set to middle value
+                mid_value = (range_min + range_max) / 2.0
+                normalized = np.full_like(pressure_1d, mid_value, dtype=float)
+            
+            # INVERT: high pressure becomes soft (low value), low pressure becomes firm (high value)
+            inverted = range_max + range_min - normalized
+            
+            # Remap inverted values from current range to 0-4 for display
+            if range_max > range_min:
+                remapped_to_04 = (inverted - range_min) * (4.0 / (range_max - range_min))
+            else:
+                remapped_to_04 = np.full_like(inverted, 2.0)
+            
+            # Create x positions (1-indexed row numbers)
+            pressure_x = np.arange(1, len(pressure_1d) + 1)
+            
+            # Add pressure data as red scatter points
+            fig.add_trace(go.Scatter(
+                x=pressure_x,
+                y=remapped_to_04,
+                mode='markers',
+                name='Pressure Data',
+                marker=dict(color='red', size=6, opacity=0.7)
+            ))
+        except Exception as e:
+            # Silently ignore errors in pressure data overlay
+            pass
+    
     # Add control points
     fig.add_trace(go.Scatter(
         x=xs,
