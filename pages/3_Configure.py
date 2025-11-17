@@ -250,7 +250,6 @@ with col1:
             pixel_map_2d,
             height=500,
             colorscale=custom_colorscale,
-            use_container_width=True,
         )
 
     curve_cols = st.columns([1, 7, 1])
