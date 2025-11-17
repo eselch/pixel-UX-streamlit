@@ -243,21 +243,14 @@ with col1:
         [1.0, "#0A2734"]
     ]
 
-    # Center the heatmap using CSS
-    st.markdown("""
-        <style>
-        div[data-testid="stPlotlyChart"] {
-            display: flex;
-            justify-content: center;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # Draw pixel map with fixed width and custom colors
-    dp.draw_pixel_map(pixel_map_2d, height=450, colorscale=custom_colorscale)
-    
-    # Show curve plot with custom height - let it fetch fresh data
-    show_curve_plot(side_key=side_key, height=200)# Debug: Display collected data
+    # Center heatmap and curve plot within the layout
+    heatmap_cols = st.columns([1, 4, 1])
+    with heatmap_cols[1]:
+        dp.draw_pixel_map(pixel_map_2d, height=450, colorscale=custom_colorscale)
+
+    curve_cols = st.columns([1, 4, 1])
+    with curve_cols[1]:
+        show_curve_plot(side_key=side_key, height=200)
 
 st.markdown("---")
 
