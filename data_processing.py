@@ -23,6 +23,92 @@ BED_SIZES = {
     "St George King": (26, 26),
 }
 
+# Body part positions as percentages of height
+# Used to calculate control point positions based on sleeper height
+BODY_PART_PERCENTAGES = {
+    1: 0.0,    # Head (100% of height)
+    2: 0.18,   # Shoulder
+    3: 0.35,   # Waist
+    4: 0.49,   # Hip
+    5: 0.68,   # Knee
+    6: 1.0,    # Feet (0")
+}
+
+BODY_PART_LABELS = {
+    1: "Head",
+    2: "Shoulder",
+    3: "Waist",
+    4: "Hip",
+    5: "Knee",
+    6: "Feet",
+}
+
+# Conversion factor: inches to grid units
+INCHES_PER_GRID_UNIT = 4.19
+
+
+def get_body_part_control_points(side_key: str, array_length: int = None) -> np.ndarray:
+    """Calculate control point positions based on sleeper height and body part positions.
+    
+    Converts sleeper height (in inches) to grid positions using body part percentages.
+    Each grid unit = 4.19 inches.
+    
+    Parameters
+    ----------
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    array_length : int, optional
+        Length of the array. If None, uses current bed size length.
+    
+    Returns
+    -------
+    np.ndarray
+        Array of 6 control point positions (1-indexed) based on body parts
+    
+    Examples
+    --------
+    For a 68" tall person:
+    - Point 1 (Head): 68" → grid position 17
+    - Point 2 (Shoulder): 68 * 0.82 = 55.76" → grid position 14
+    - Point 3 (Waist): 68 * 0.65 = 44.2" → grid position 11
+    - Point 4 (Hip): 68 * 0.51 = 34.68" → grid position 9
+    - Point 5 (Knee): 68 * 0.32 = 21.76" → grid position 6
+    - Point 6 (Feet): 0" → grid position 1
+    """
+    if array_length is None:
+        array_length = get_array_length()
+    
+    # Get sleeper height from session state (default to 68 inches)
+    height_inches = 65.0  # Default
+    if "answers" in st.session_state and side_key in st.session_state.answers:
+        height_str = st.session_state.answers[side_key].get("setting2", "65")
+        try:
+            # Handle empty string or invalid input
+            if height_str and height_str.strip():
+                height_inches = float(height_str)
+            # Ensure height is reasonable (between 40 and 96 inches)
+            height_inches = np.clip(height_inches, 40, 96)
+        except (ValueError, TypeError):
+            # If conversion fails, use default
+            height_inches = 65.0
+    
+    # Calculate positions for each body part
+    positions = []
+    for point_num in range(1, 7):  # Points 1-6
+        # Get height at this body part (in inches)
+        height_at_part = height_inches * 0.95 * BODY_PART_PERCENTAGES[point_num]
+        
+        # Convert inches to grid units (1-indexed)
+        # Each grid unit = 4.19 inches, adjust to align 65" with position 16
+        grid_position = (height_at_part / INCHES_PER_GRID_UNIT) + 0.5
+        
+        # Clip to valid range and round to nearest integer
+        grid_position = int(np.round(np.clip(grid_position, 1, array_length)))
+        
+        positions.append(grid_position)
+    
+    return np.array(positions, dtype=int)
+
 
 def set_bed_size(bed_name: str) -> None:
     """Set the bed size and reinitialize master arrays fresh at new dimensions.
@@ -168,7 +254,7 @@ def downsample_pressure_map(
     """Downsample a high-resolution pressure map to a lower resolution grid.
     
     Handles automatic rotation if the array comes in rotated (64x160 instead of 160x64).
-    Uses block averaging to preserve spatial information while reducing resolution.
+    Uses 95th percentile to preserve clustered pressure peaks while ignoring outliers.
     
     Parameters
     ----------
@@ -185,8 +271,8 @@ def downsample_pressure_map(
     Notes
     -----
     - If input is 64x160, it will be rotated 90° counterclockwise to 160x64
-    - Uses block averaging: divides array into blocks and takes mean of each block
-    - Preserves spatial layout and pressure distribution
+    - Uses 95th percentile: captures clustered high-pressure areas while filtering outliers
+    - Better than max (ignores single-pixel noise) and mean (preserves hot spots)
     """
     pressure_array = np.asarray(pressure_array, dtype=float)
     
@@ -214,7 +300,7 @@ def downsample_pressure_map(
     # Create output array
     downsampled = np.zeros(target_shape, dtype=float)
     
-    # Downsample using block averaging
+    # Downsample using 95th percentile (preserves pressure peaks while ignoring outliers)
     for i in range(target_rows):
         for j in range(target_cols):
             # Calculate block boundaries in original array
@@ -223,9 +309,10 @@ def downsample_pressure_map(
             col_start = int(j * block_width)
             col_end = int((j + 1) * block_width)
             
-            # Extract block and compute mean
+            # Extract block and compute 95th percentile
+            # This captures clustered high values while ignoring single-pixel outliers
             block = pressure_array[row_start:row_end, col_start:col_end]
-            downsampled[i, j] = np.mean(block)
+            downsampled[i, j] = np.percentile(block, 92)
     
     return downsampled
 
@@ -257,315 +344,6 @@ def pressure_map_to_1d_array(pressure_map_2d: np.ndarray) -> np.ndarray:
     
     # Get max value from each row (axis=1)
     return np.max(pressure_map_2d, axis=1)
-
-
-def apply_pressure_map_to_curve(
-    pressure_map_2d: np.ndarray,
-    side_key: str = "sleeper_1",
-    num_control_points: int = 6,
-    remap_range: str = "low"
-) -> None:
-    """Apply pressure map data using scipy spline fitting.
-    
-    Creates a scipy UnivariateSpline from the pressure data and stores
-    the spline's knot positions and values for editing in spline mode.
-    
-    This function:
-    1. Converts the 2D pressure map to a 1D array (max per row)
-    2. Normalizes and inverts the data
-    3. Fits a scipy spline to the data
-    4. Extracts the spline's internal knots as control points
-    5. Stores the knots and enables "spline mode" in the curve editor
-    
-    Parameters
-    ----------
-    pressure_map_2d : np.ndarray
-        2D pressure map array, typically shape (17, 9)
-    side_key : str
-        The sleeper identifier ("sleeper_1" or "sleeper_2")
-    num_control_points : int
-        Unused in spline mode (knot count is determined by scipy)
-    remap_range : str
-        Remap range: "extra_low" (1-2), "low" (1-3), or "high" (0-4), default "low"
-    
-    Notes
-    -----
-    The master array is updated with the scipy spline fit.
-    High pressure areas become soft (low values), low pressure areas become firm (high values).
-    The spline's internal knots become the editable control points.
-    """
-    # Convert 2D pressure map to 1D array (max per row)
-    pressure_1d = pressure_map_to_1d_array(pressure_map_2d)
-    array_length = len(pressure_1d)
-    
-    # Determine remap range
-    if remap_range == "extra_low":
-        range_min, range_max = 1, 2
-    elif remap_range == "low":
-        range_min, range_max = 1, 3
-    else:  # "high"
-        range_min, range_max = 0, 4
-    
-    # Normalize pressure_1d to the specified range
-    p_min = np.min(pressure_1d)
-    p_max = np.max(pressure_1d)
-    
-    if p_max > p_min:
-        # Scale to specified range
-        normalized = range_min + (range_max - range_min) * (pressure_1d - p_min) / (p_max - p_min)
-    else:
-        # All values are the same, set to middle value
-        mid_value = (range_min + range_max) / 2.0
-        normalized = np.full_like(pressure_1d, mid_value, dtype=float)
-    
-    # INVERT: high pressure → soft (low value), low pressure → firm (high value)
-    inverted = range_max + range_min - normalized
-    
-    # === FIT SCIPY SPLINE ===
-    try:
-        from scipy.interpolate import UnivariateSpline
-        
-        # Create x data (0-indexed positions)
-        x_data = np.arange(array_length)
-        
-        # Fit a smoothing spline to the inverted pressure data
-        # s = smoothing factor: 0 = interpolate exactly, higher = smoother
-        # Initialize at 5% of array length
-        smoothing_factor = array_length * 0.05
-        
-        # Use cubic spline (k=3) for smooth curves
-        spline = UnivariateSpline(x_data, inverted, s=smoothing_factor, k=3)
-        
-        # Get the spline's internal knots (these become the control points)
-        # UnivariateSpline internal knots exclude the boundary knots
-        knots_internal = spline.get_knots()
-        
-        # Ensure we have at least 4 knots for good control
-        min_knots = 4
-        if len(knots_internal) < min_knots:
-            # Use exact interpolation through more points
-            # Select evenly-spaced positions as knots
-            num_knots = max(min_knots, array_length // 3)  # At least 4, or 1 per 3 rows
-            knot_indices = np.linspace(0, array_length - 1, num_knots)
-            knot_indices = np.round(knot_indices).astype(int)
-            
-            # Fit spline with exact interpolation (s=0) through selected points
-            spline = UnivariateSpline(knot_indices, inverted[knot_indices], s=0, k=3)
-            knots_internal = knot_indices.astype(float)
-        
-        # Evaluate spline at knot positions to get Y values
-        knot_y_values = spline(knots_internal)
-        
-        # Convert knots to 1-indexed for consistency with row numbers
-        knots_1indexed = np.round(knots_internal + 1).astype(int)
-        
-        # Clip knot positions to valid range
-        knots_1indexed = np.clip(knots_1indexed, 1, array_length)
-        
-        # Clip Y values to the remap range
-        knot_y_values = np.clip(knot_y_values, range_min, range_max)
-        
-        # Round knot Y values to integers (they'll be rounded anyway in master array)
-        knot_y_values = np.round(knot_y_values).astype(float)
-        
-        # Refit spline with rounded knot values for exact interpolation
-        # This ensures the curve passes through integer firmness levels at knots
-        xs_0indexed = knots_1indexed - 1
-        spline = UnivariateSpline(xs_0indexed, knot_y_values, s=0, k=min(3, len(knots_1indexed) - 1))
-        
-        # Evaluate the spline across the entire array to create master_array
-        x_full = np.arange(array_length)
-        master_array_values = spline(x_full)
-        master_array_values = np.clip(master_array_values, range_min, range_max)
-        master_array_values = np.round(master_array_values).astype(int)
-        
-        # === STORE SPLINE DATA IN SESSION STATE ===
-        if "answers" not in st.session_state:
-            st.session_state.answers = {"sleeper_1": {}, "sleeper_2": {}}
-        
-        if side_key not in st.session_state.answers:
-            st.session_state.answers[side_key] = {}
-        
-        # Enable spline mode
-        st.session_state.answers[side_key]["use_scipy_spline"] = True
-        
-        # Store the ORIGINAL normalized and inverted 1D pressure data
-        # This is the source data we'll always refit from
-        st.session_state.answers[side_key]["original_pressure_1d"] = inverted.tolist()
-        
-        # Store knot positions and values (these are the editable control points)
-        st.session_state.answers[side_key]["spline_knots"] = {
-            "x": knots_1indexed.tolist(),
-            "y": knot_y_values.tolist()
-        }
-        
-        # Store the smoothing factor for reference
-        st.session_state.answers[side_key]["spline_smoothing"] = smoothing_factor
-        
-        # Store the remap range
-        st.session_state.answers[side_key]["remap_range"] = remap_range
-        
-        # Store the initial curve scale as 100% (fills full graph range)
-        st.session_state.answers[side_key]["curve_scale_percent"] = 100.0
-        
-        # Store the original firmness at time of upload (for calculating offsets later)
-        original_firmness = st.session_state.answers[side_key].get("firmness_value", 2)
-        st.session_state.answers[side_key]["original_firmness"] = original_firmness
-        
-        # Store master array
-        st.session_state.answers[side_key]["master_array"] = master_array_values.tolist()
-        
-        # Store the number of knots (for UI to know how many controls to show)
-        st.session_state.answers[side_key]["num_control_points"] = len(knots_1indexed)
-        
-    except Exception as e:
-        # If spline fitting fails, fall back to simple normalized data
-        master_array = np.round(inverted).astype(int)
-        master_array = np.clip(master_array, range_min, range_max)
-        set_master_array(side_key, master_array)
-        pass
-
-
-def refit_spline_from_original(
-    side_key: str = "sleeper_1",
-    scale_percent: float = 100.0,
-    firmness_offset: float = 0.0,
-    smoothing_factor: float = None
-) -> None:
-    """Refit the spline from the original pressure data with scale and firmness adjustments.
-    
-    This allows adjusting the curve without losing data to clipping. The original
-    pressure data is scaled and shifted, then the spline is refit to produce new knots.
-    
-    Parameters
-    ----------
-    side_key : str
-        The sleeper identifier ("sleeper_1" or "sleeper_2")
-    scale_percent : float
-        Scale percentage (1-100%). 100% = data fills full 0-4 range, 1% = nearly flat line
-    firmness_offset : float
-        Offset to add after scaling (shifts the whole curve up/down)
-    smoothing_factor : float, optional
-        Smoothing factor for scipy spline. If None, uses stored value.
-    
-    Notes
-    -----
-    Reads from st.session_state.answers[side_key]["original_pressure_1d"]
-    Updates spline_knots and master_array in session state.
-    """
-    if "answers" not in st.session_state:
-        return
-    
-    if side_key not in st.session_state.answers:
-        return
-    
-    sleeper_data = st.session_state.answers[side_key]
-    
-    # Get the original pressure data
-    original_data = sleeper_data.get("original_pressure_1d")
-    if original_data is None:
-        return
-    
-    original_data = np.array(original_data, dtype=float)
-    array_length = len(original_data)
-    
-    # Get smoothing factor (use provided value, stored value, or default 5%)
-    if smoothing_factor is None:
-        smoothing_factor = sleeper_data.get("spline_smoothing", array_length * 0.05)
-    else:
-        # Store the new smoothing factor
-        sleeper_data["spline_smoothing"] = smoothing_factor
-    
-    # Calculate the original data range
-    data_min = np.min(original_data)
-    data_max = np.max(original_data)
-    data_range = data_max - data_min
-    data_center = (data_max + data_min) / 2.0
-    
-    # Convert percentage to scale factor
-    # At 100%, the data should fill the full 0-4 range (scale = 4.0 / data_range)
-    # At 1%, the data should be nearly flat (scale approaches 0)
-    full_range = 4.0
-    if data_range > 0:
-        # Scale factor to make data fill full range at 100%
-        scale_for_full_range = full_range / data_range
-        # Apply percentage: 100% = full scale, 1% = 1% of full scale
-        scale_factor = scale_for_full_range * (scale_percent / 100.0)
-    else:
-        scale_factor = 1.0
-    
-    # Apply scale around center point
-    scaled_data = data_center + (original_data - data_center) * scale_factor
-    
-    # Apply firmness offset
-    adjusted_data = scaled_data + firmness_offset
-    
-    # Clip to valid range [0, 4]
-    adjusted_data = np.clip(adjusted_data, 0, 4)
-    
-    # === FIT SCIPY SPLINE ===
-    try:
-        from scipy.interpolate import UnivariateSpline
-        
-        # Create x data (0-indexed positions)
-        x_data = np.arange(array_length)
-        
-        # Fit a smoothing spline to the adjusted data
-        spline = UnivariateSpline(x_data, adjusted_data, s=smoothing_factor, k=3)
-        
-        # Get the spline's internal knots
-        knots_internal = spline.get_knots()
-        
-        # Ensure we have at least 4 knots for good control
-        min_knots = 4
-        if len(knots_internal) < min_knots:
-            # Use exact interpolation through more points
-            num_knots = max(min_knots, array_length // 3)
-            knot_indices = np.linspace(0, array_length - 1, num_knots)
-            knot_indices = np.round(knot_indices).astype(int)
-            
-            # Fit spline with exact interpolation (s=0) through selected points
-            spline = UnivariateSpline(knot_indices, adjusted_data[knot_indices], s=0, k=3)
-            knots_internal = knot_indices.astype(float)
-        
-        # Evaluate spline at knot positions to get Y values
-        knot_y_values = spline(knots_internal)
-        
-        # Convert knots to 1-indexed for consistency with row numbers
-        knots_1indexed = np.round(knots_internal + 1).astype(int)
-        knots_1indexed = np.clip(knots_1indexed, 1, array_length)
-        
-        # Clip Y values to valid range
-        knot_y_values = np.clip(knot_y_values, 0, 4)
-        
-        # Round knot Y values to integers (they'll be rounded anyway in master array)
-        knot_y_values = np.round(knot_y_values).astype(float)
-        
-        # Refit spline with rounded knot values for exact interpolation
-        # This ensures the curve passes through integer firmness levels at knots
-        xs_0indexed = knots_1indexed - 1
-        spline = UnivariateSpline(xs_0indexed, knot_y_values, s=0, k=min(3, len(knots_1indexed) - 1))
-        
-        # Evaluate the spline across the entire array to create master_array
-        x_full = np.arange(array_length)
-        master_array_values = spline(x_full)
-        master_array_values = np.clip(master_array_values, 0, 4)
-        master_array_values = np.round(master_array_values).astype(int)
-        
-        # Update stored knots
-        sleeper_data["spline_knots"] = {
-            "x": knots_1indexed.tolist(),
-            "y": knot_y_values.tolist()
-        }
-        
-        # Update number of control points (may change with refitting)
-        sleeper_data["num_control_points"] = len(knots_1indexed)
-        
-        # Update master array
-        set_master_array(side_key, master_array_values)
-        
-    except Exception as e:
-        print(f"Error refitting spline from original data: {e}")
 
 
 def draw_pixel_map(
@@ -664,14 +442,8 @@ def draw_pixel_map(
     )
     
     # Update layout with square aspect ratio
-    fig.update_layout(
-        title=dict(
-            text=title,
-            x=0.5,
-            xanchor='center',
-            font=dict(size=20)
-        ) if title else None,
-        xaxis=dict(
+    layout_config = {
+        'xaxis': dict(
             side="top",
             showgrid=False,
             showticklabels=False,  # Hide x-axis numbers
@@ -681,7 +453,7 @@ def draw_pixel_map(
             range=[-0.5, cols - 0.5],
             constrain="domain",
         ),
-        yaxis=dict(
+        'yaxis': dict(
             showgrid=False,
             showticklabels=True,  # Show y-axis numbers (row labels)
             ticks="",  # Remove tick marks
@@ -695,12 +467,24 @@ def draw_pixel_map(
             scaleanchor="x",  # Force square cells
             scaleratio=1,
         ),
-        height=plot_height if height is None else height,
-        width=fig_width,
-        margin=dict(l=20, r=5, t=40 if title else 5, b=5),  # Increased top margin for title
-        plot_bgcolor="white",
-        showlegend=False,
-    )
+        'height': plot_height if height is None else height,
+        'width': fig_width,
+        'margin': dict(l=20, r=5, t=5, b=5),
+        'plot_bgcolor': "white",
+        'showlegend': False,
+    }
+    
+    # Only add title if one is provided
+    if title is not None and title != "":
+        layout_config['title'] = dict(
+            text=title,
+            x=0.5,
+            xanchor='center',
+            font=dict(size=20)
+        )
+        layout_config['margin']['t'] = 40  # Add top margin for title
+    
+    fig.update_layout(**layout_config)
     
     st.plotly_chart(fig, use_container_width=use_container_width, config={'staticPlot': True})
 

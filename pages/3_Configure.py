@@ -89,7 +89,7 @@ with col2:
     current_firmness = st.session_state.answers.get(side_key, {}).get("firmness_value", 2)
     
     def on_firmness_change():
-        """Callback when base firmness changes - shifts entire master array and knots if in spline mode"""
+        """Callback when base firmness changes - shifts entire master array"""
         selected_firmness = st.session_state[f"firmness_selector_{side_key}"]
         old_firmness = st.session_state.answers[side_key].get("firmness_value", 2)
         
@@ -97,31 +97,11 @@ with col2:
             # Calculate the shift amount
             shift = selected_firmness - old_firmness
             
-            # Check if we're in spline mode
-            is_spline_mode = st.session_state.answers[side_key].get("use_scipy_spline", False)
-            
-            if is_spline_mode:
-                # === SPLINE MODE: Refit from original pressure data with new firmness offset ===
-                # Get current scale percentage (default to 50%)
-                current_scale_percent = st.session_state.answers[side_key].get("curve_scale_percent", 50.0)
-                
-                # Get the original firmness when data was uploaded (stored as base reference)
-                # We'll calculate total offset from the original base
-                original_firmness = st.session_state.answers[side_key].get("original_firmness", 2)
-                total_offset = selected_firmness - original_firmness
-                
-                # Refit spline from original data with scale percentage and offset
-                dp.refit_spline_from_original(
-                    side_key=side_key,
-                    scale_percent=current_scale_percent,
-                    firmness_offset=total_offset
-                )
-            else:
-                # === MANUAL MODE: Shift master array directly ===
-                master_array_current = dp.get_master_array(side_key)
-                shifted_array = master_array_current + shift
-                shifted_array = shifted_array.clip(0, 4)  # Keep within valid range
-                dp.set_master_array(side_key, shifted_array)
+            # Shift master array directly
+            master_array_current = dp.get_master_array(side_key)
+            shifted_array = master_array_current + shift
+            shifted_array = shifted_array.clip(0, 4)  # Keep within valid range
+            dp.set_master_array(side_key, shifted_array)
             
             # Update session state firmness value
             st.session_state.answers[side_key]["firmness_value"] = selected_firmness
@@ -144,98 +124,6 @@ with col2:
         st.rerun()
     
     st.write("")  # adds spacing
-    
-    # Add curve scale control (only show if in spline mode / CSV data exists)
-    if "csv_data" in st.session_state and side_key in st.session_state.csv_data:
-        is_spline_mode = st.session_state.answers.get(side_key, {}).get("use_scipy_spline", False)
-        
-        if is_spline_mode:
-            st.subheader("Curve Scale")
-            
-            # Get current scale percentage from session state
-            current_scale_percent = st.session_state.answers.get(side_key, {}).get("curve_scale_percent", 50.0)
-            
-            # Create slider for curve scale (1% to 100%)
-            curve_scale_percent = st.slider(
-                "Curve Scale",
-                min_value=1.0,
-                max_value=100.0,
-                value=current_scale_percent,
-                step=1.0,
-                format="%d%%",
-                label_visibility="collapsed",
-                key=f"curve_scale_slider_{side_key}",
-                help="1% = nearly flat, 100% = fills full graph range (0-4)"
-            )
-            
-            # If scale changed, rescale the curve
-            if curve_scale_percent != current_scale_percent:
-                # Get current firmness and calculate offset from original
-                current_firmness = st.session_state.answers[side_key].get("firmness_value", 2)
-                original_firmness = st.session_state.answers[side_key].get("original_firmness", 2)
-                firmness_offset = current_firmness - original_firmness
-                
-                # Update stored scale percentage
-                st.session_state.answers[side_key]["curve_scale_percent"] = curve_scale_percent
-                
-                # Refit spline from original data with new scale percentage and current offset
-                dp.refit_spline_from_original(
-                    side_key=side_key,
-                    scale_percent=curve_scale_percent,
-                    firmness_offset=firmness_offset
-                )
-                
-                st.rerun()
-        
-        st.write("")  # adds spacing
-        
-        # Add smoothing factor slider
-        if is_spline_mode:
-            st.subheader("Curve Smoothing")
-            
-            # Get current smoothing factor from session state
-            array_length = dp.get_array_length()
-            default_smoothing = array_length * 0.05  # 5% default
-            current_smoothing = st.session_state.answers.get(side_key, {}).get("spline_smoothing", default_smoothing)
-            
-            # Create slider for smoothing factor (0 = exact fit, higher = smoother)
-            # Display as percentage of array length for intuitive control
-            smoothing_percent = (current_smoothing / array_length) * 100.0 if array_length > 0 else 5.0
-            
-            smoothing_percent = st.slider(
-                "Curve Smoothing",
-                min_value=0.01,
-                max_value=5.00,
-                value=smoothing_percent,
-                step=0.5,
-                format="%.1f%%",
-                label_visibility="collapsed",
-                key=f"smoothing_slider_{side_key}",
-                help="0% = exact fit through data points, higher = smoother curve with fewer knots"
-            )
-            
-            # Convert percentage back to smoothing factor
-            new_smoothing = (smoothing_percent / 100.0) * array_length
-            
-            # If smoothing changed, refit the curve
-            if abs(new_smoothing - current_smoothing) > 0.01:
-                # Get current scale and firmness offset
-                current_scale_percent = st.session_state.answers[side_key].get("curve_scale_percent", 50.0)
-                current_firmness = st.session_state.answers[side_key].get("firmness_value", 2)
-                original_firmness = st.session_state.answers[side_key].get("original_firmness", 2)
-                firmness_offset = current_firmness - original_firmness
-                
-                # Refit spline with new smoothing factor
-                dp.refit_spline_from_original(
-                    side_key=side_key,
-                    scale_percent=current_scale_percent,
-                    firmness_offset=firmness_offset,
-                    smoothing_factor=new_smoothing
-                )
-                
-                st.rerun()
-        
-        st.write("")  # adds spacing
 
     # Show curve controls
     show_curve_controls(side_key=side_key)

@@ -29,7 +29,7 @@ with col_left:
         downsampled = dp.downsample_pressure_map(existing_data['sensel_data'], target_shape=(17, 9))
 
         # Display the downsampled pressure map heatmap
-        dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto")
+        dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto", title=None)
         
         # Show uploaded file info and delete button
         st.write(f"**Files:** {', '.join(existing_data['filenames'])}")
@@ -50,10 +50,6 @@ with col_left:
                 existing_data['filenames'],
                 side_key="sleeper_1"
             )
-            
-            # Reapply to curve editor with flipped data
-            downsampled = dp.downsample_pressure_map(flipped_data, target_shape=(17, 9))
-            dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_1", num_control_points=6)
             
             st.rerun()
         
@@ -88,10 +84,6 @@ with col_left:
                     side_key="sleeper_1"
                 )
                 
-                # Downsample and apply to curve editor
-                downsampled = dp.downsample_pressure_map(merged_data, target_shape=(17, 9))
-                dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_1", num_control_points=6)
-                
                 st.rerun()
                             
             except Exception as e:
@@ -109,7 +101,7 @@ with col_right:
             downsampled = dp.downsample_pressure_map(existing_data['sensel_data'], target_shape=(17, 9))
 
             # Display the downsampled pressure map heatmap
-            dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto")
+            dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto", title=None)
             
             # Show uploaded file info and delete button
             st.write(f"**Files:** {', '.join(existing_data['filenames'])}")
@@ -130,10 +122,6 @@ with col_right:
                     existing_data['filenames'],
                     side_key="sleeper_2"
                 )
-                
-                # Reapply to curve editor with flipped data
-                downsampled = dp.downsample_pressure_map(flipped_data, target_shape=(17, 9))
-                dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_2", num_control_points=6)
                 
                 st.rerun()
             
@@ -167,10 +155,6 @@ with col_right:
                         filenames, 
                         side_key="sleeper_2"
                     )
-                    
-                    # Downsample and apply to curve editor
-                    downsampled = dp.downsample_pressure_map(merged_data, target_shape=(17, 9))
-                    dp.apply_pressure_map_to_curve(downsampled, side_key="sleeper_2", num_control_points=6)
                     
                     st.rerun()
                                 
