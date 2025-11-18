@@ -195,12 +195,12 @@ with col2:
             
             # Get current smoothing factor from session state
             array_length = dp.get_array_length()
-            default_smoothing = array_length * 0.05  # 5% default
+            default_smoothing = array_length * 0.025  # 2.5% default (halfway on slider)
             current_smoothing = st.session_state.answers.get(side_key, {}).get("spline_smoothing", default_smoothing)
             
             # Create slider for smoothing factor (0 = exact fit, higher = smoother)
             # Display as percentage of array length for intuitive control
-            smoothing_percent = (current_smoothing / array_length) * 100.0 if array_length > 0 else 5.0
+            smoothing_percent = (current_smoothing / array_length) * 100.0 if array_length > 0 else 2.5
             
             smoothing_percent = st.slider(
                 "Curve Smoothing",

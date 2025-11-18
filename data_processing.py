@@ -330,8 +330,8 @@ def apply_pressure_map_to_curve(
         
         # Fit a smoothing spline to the inverted pressure data
         # s = smoothing factor: 0 = interpolate exactly, higher = smoother
-        # Initialize at 5% of array length
-        smoothing_factor = array_length * 0.05
+        # Initialize at 2.5% of array length (halfway on slider)
+        smoothing_factor = array_length * 0.025
         
         # Use cubic spline (k=3) for smooth curves
         spline = UnivariateSpline(x_data, inverted, s=smoothing_factor, k=3)
@@ -469,9 +469,9 @@ def refit_spline_from_original(
     original_data = np.array(original_data, dtype=float)
     array_length = len(original_data)
     
-    # Get smoothing factor (use provided value, stored value, or default 5%)
+    # Get smoothing factor (use provided value, stored value, or default 2.5%)
     if smoothing_factor is None:
-        smoothing_factor = sleeper_data.get("spline_smoothing", array_length * 0.05)
+        smoothing_factor = sleeper_data.get("spline_smoothing", array_length * 0.025)
     else:
         # Store the new smoothing factor
         sleeper_data["spline_smoothing"] = smoothing_factor
@@ -664,14 +664,8 @@ def draw_pixel_map(
     )
     
     # Update layout with square aspect ratio
-    fig.update_layout(
-        title=dict(
-            text=title,
-            x=0.5,
-            xanchor='center',
-            font=dict(size=20)
-        ) if title else None,
-        xaxis=dict(
+    layout_config = {
+        'xaxis': dict(
             side="top",
             showgrid=False,
             showticklabels=False,  # Hide x-axis numbers
@@ -681,7 +675,7 @@ def draw_pixel_map(
             range=[-0.5, cols - 0.5],
             constrain="domain",
         ),
-        yaxis=dict(
+        'yaxis': dict(
             showgrid=False,
             showticklabels=True,  # Show y-axis numbers (row labels)
             ticks="",  # Remove tick marks
@@ -695,12 +689,24 @@ def draw_pixel_map(
             scaleanchor="x",  # Force square cells
             scaleratio=1,
         ),
-        height=plot_height if height is None else height,
-        width=fig_width,
-        margin=dict(l=20, r=5, t=40 if title else 5, b=5),  # Increased top margin for title
-        plot_bgcolor="white",
-        showlegend=False,
-    )
+        'height': plot_height if height is None else height,
+        'width': fig_width,
+        'margin': dict(l=20, r=5, t=5, b=5),
+        'plot_bgcolor': "white",
+        'showlegend': False,
+    }
+    
+    # Only add title if one is provided
+    if title is not None and title != "":
+        layout_config['title'] = dict(
+            text=title,
+            x=0.5,
+            xanchor='center',
+            font=dict(size=20)
+        )
+        layout_config['margin']['t'] = 40  # Add top margin for title
+    
+    fig.update_layout(**layout_config)
     
     st.plotly_chart(fig, use_container_width=use_container_width, config={'staticPlot': True})
 

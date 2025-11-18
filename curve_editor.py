@@ -488,6 +488,70 @@ def show_curve_plot(
 
     fig = go.Figure()
     
+    # === ADD PRESSURE MAP HEATMAP UNDERLAY IF CSV IS LOADED ===
+    if "csv_data" in st.session_state and side_key in st.session_state.csv_data:
+        try:
+            # Get the downsampled pressure map - use same length as current array
+            sensel_data = st.session_state.csv_data[side_key]["sensel_data"]
+            downsampled = dp.downsample_pressure_map(sensel_data, target_shape=(array_length, 9))
+            
+            # Convert to 1D using max per row
+            pressure_1d = dp.pressure_map_to_1d_array(downsampled)
+            
+            # Map pressure to 0-4 range using fixed reference scale
+            max_pressure_psi = 2.0  # Reference: 2 psi fills the full graph
+            
+            # Scale pressure data: 0 psi = 0, 2 psi = 4
+            scaled = (pressure_1d / max_pressure_psi) * 4.0
+            scaled = np.clip(scaled, 0, 4)  # Clip to graph range
+            
+            # Create x positions (1-indexed row numbers)
+            pressure_x = np.arange(1, len(pressure_1d) + 1)
+            
+            # Map each scaled value to a color using the same gradient as the heatmap
+            # Blue gradient: light blue (0) to dark blue (4)
+            def value_to_color(val):
+                """Map a value in range 0-4 to the blue gradient color."""
+                # Normalize to 0-1 range
+                normalized = val / 4.0
+                
+                # Define the color stops (same as heatmap)
+                if normalized <= 0.25:
+                    # Interpolate between 0.0 (#e3f2fd) and 0.25 (#90caf9)
+                    t = normalized / 0.25
+                    return f'rgba({int(227 + t * (144 - 227))}, {int(242 + t * (202 - 242))}, {int(253 + t * (249 - 253))}, 0.3)'
+                elif normalized <= 0.5:
+                    # Interpolate between 0.25 (#90caf9) and 0.5 (#42a5f5)
+                    t = (normalized - 0.25) / 0.25
+                    return f'rgba({int(144 + t * (66 - 144))}, {int(202 + t * (165 - 202))}, {int(249 + t * (245 - 249))}, 0.3)'
+                elif normalized <= 0.75:
+                    # Interpolate between 0.5 (#42a5f5) and 0.75 (#1e88e5)
+                    t = (normalized - 0.5) / 0.25
+                    return f'rgba({int(66 + t * (30 - 66))}, {int(165 + t * (136 - 165))}, {int(245 + t * (229 - 245))}, 0.3)'
+                else:
+                    # Interpolate between 0.75 (#1e88e5) and 1.0 (#0d47a1)
+                    t = (normalized - 0.75) / 0.25
+                    return f'rgba({int(30 + t * (13 - 30))}, {int(136 + t * (71 - 136))}, {int(229 + t * (161 - 229))}, 0.3)'
+            
+            # Create color array for each bar
+            bar_colors = [value_to_color(v) for v in scaled]
+            
+            # Add pressure data as bar graph background (inverted, from top down)
+            # Use negative values with base at vmax to make bars extend downward
+            fig.add_trace(go.Bar(
+                x=pressure_x,
+                y=-scaled,  # Negative values
+                base=vmax,  # Start bars from top of graph (y=4)
+                name='Pressure Data',
+                marker=dict(color=bar_colors),
+                width=0.8,
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+        except Exception as e:
+            # Silently ignore errors in pressure data overlay
+            pass
+    
     # Set curve color and control point style based on mode
     if is_spline:
         curve_color = '#0492a8'
@@ -508,65 +572,6 @@ def show_curve_plot(
         name='Curve',
         line=dict(color=curve_color, width=2)
     ))
-    
-    # Add pressure map data points if available, red dot overlay
-    if "csv_data" in st.session_state and side_key in st.session_state.csv_data:
-        try:
-            # Get the downsampled pressure map
-            sensel_data = st.session_state.csv_data[side_key]["sensel_data"]
-            downsampled = dp.downsample_pressure_map(sensel_data, target_shape=(array_length, 9))
-            
-            # Convert to 1D using max per row
-            pressure_1d = dp.pressure_map_to_1d_array(downsampled)
-            
-            # Get the remap range from session state
-            remap_range = st.session_state.answers.get(side_key, {}).get("remap_range", "low")
-            
-            # Determine remap range
-            if remap_range == "extra_low":
-                range_min, range_max = 1, 2
-            elif remap_range == "low":
-                range_min, range_max = 1, 3
-            else:  # "high"
-                range_min, range_max = 0, 4
-            
-            # Normalize pressure_1d to the specified range
-            p_min = np.min(pressure_1d)
-            p_max = np.max(pressure_1d)
-            
-            if p_max > p_min:
-                # Scale to specified range
-                normalized = range_min + (range_max - range_min) * (pressure_1d - p_min) / (p_max - p_min)
-            else:
-                # All values are the same, set to middle value
-                mid_value = (range_min + range_max) / 2.0
-                normalized = np.full_like(pressure_1d, mid_value, dtype=float)
-            
-            # INVERT: high pressure becomes soft (low value), low pressure becomes firm (high value)
-            inverted = range_max + range_min - normalized
-            
-            # Remap inverted values from current range to 0-4 for display
-            if range_max > range_min:
-                remapped_to_04 = (inverted - range_min) * (4.0 / (range_max - range_min))
-            else:
-                remapped_to_04 = np.full_like(inverted, 2.0)
-            
-            # Create x positions (1-indexed row numbers)
-            pressure_x = np.arange(1, len(pressure_1d) + 1)
-            
-            # Add pressure data as red scatter points (only if not in spline mode to avoid confusion)
-            # In spline mode, the curve IS the pressure data
-            if not is_spline:
-                fig.add_trace(go.Scatter(
-                    x=pressure_x,
-                    y=remapped_to_04,
-                    mode='markers',
-                    name='Pressure Data',
-                    marker=dict(color='red', size=6, opacity=0.7)
-                ))
-        except Exception as e:
-            # Silently ignore errors in pressure data overlay
-            pass
     
     # Add control points / knots
     fig.add_trace(go.Scatter(
