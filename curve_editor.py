@@ -367,16 +367,44 @@ def show_curve_plot(
             pressure_1d = dp.pressure_map_to_1d_array(downsampled)
             
             # Map pressure to 0-4 range using fixed reference scale
-            # 3 psi = full graph (4), linearly scaled
-            max_pressure_psi = 2.0  # Reference: 3 psi fills the full graph
+            # 1.5 psi = full graph (4), linearly scaled
+            max_pressure_psi = 1.5  # Reference: 1.5 psi fills the full graph
             
-            # Scale pressure data: 0 psi = 0, 3 psi = 4
-            # Values above 3 psi will be clipped to 4
+            # Scale pressure data: 0 psi = 0, 1.5 psi = 4
+            # Values above 1.5 psi will be clipped to 4
             scaled = (pressure_1d / max_pressure_psi) * 4.0
             scaled = np.clip(scaled, 0, 4)  # Clip to graph range
             
             # Create x positions (1-indexed row numbers)
             pressure_x = np.arange(1, len(pressure_1d) + 1)
+            
+            # Map each scaled value to a color using the same gradient as the heatmap
+            # Blue gradient: light blue (0) to dark blue (4)
+            def value_to_color(val):
+                """Map a value in range 0-4 to the blue gradient color."""
+                # Normalize to 0-1 range
+                normalized = val / 4.0
+                
+                # Define the color stops (same as heatmap)
+                if normalized <= 0.25:
+                    # Interpolate between 0.0 (#e3f2fd) and 0.25 (#90caf9)
+                    t = normalized / 0.25
+                    return f'rgba({int(227 + t * (144 - 227))}, {int(242 + t * (202 - 242))}, {int(253 + t * (249 - 253))}, 0.5)'
+                elif normalized <= 0.5:
+                    # Interpolate between 0.25 (#90caf9) and 0.5 (#42a5f5)
+                    t = (normalized - 0.25) / 0.25
+                    return f'rgba({int(144 + t * (66 - 144))}, {int(202 + t * (165 - 202))}, {int(249 + t * (245 - 249))}, 0.5)'
+                elif normalized <= 0.75:
+                    # Interpolate between 0.5 (#42a5f5) and 0.75 (#1e88e5)
+                    t = (normalized - 0.5) / 0.25
+                    return f'rgba({int(66 + t * (30 - 66))}, {int(165 + t * (136 - 165))}, {int(245 + t * (229 - 245))}, 0.5)'
+                else:
+                    # Interpolate between 0.75 (#1e88e5) and 1.0 (#0d47a1)
+                    t = (normalized - 0.75) / 0.25
+                    return f'rgba({int(30 + t * (13 - 30))}, {int(136 + t * (71 - 136))}, {int(229 + t * (161 - 229))}, 0.5)'
+            
+            # Create color array for each bar
+            bar_colors = [value_to_color(v) for v in scaled]
             
             # Add pressure data as bar graph background (inverted, from top down)
             # Use negative values with base at vmax to make bars extend downward
@@ -385,7 +413,7 @@ def show_curve_plot(
                 y=-scaled,  # Negative values
                 base=vmax,  # Start bars from top of graph (y=4)
                 name='Pressure Data',
-                marker=dict(color='lightgray', opacity=0.5),
+                marker=dict(color=bar_colors),
                 width=0.8,
                 showlegend=False
             ))

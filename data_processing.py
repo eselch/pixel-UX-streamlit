@@ -111,13 +111,13 @@ def get_body_part_control_points(side_key: str, array_length: int = None) -> np.
 
 
 def set_bed_size(bed_name: str) -> None:
-    """Set the bed size and reinitialize master arrays fresh at new dimensions.
+    """Set the bed size and resize master arrays while preserving existing values.
     
     When bed size changes:
     1. Store new bed size in session state
-    2. Discard old master arrays (don't interpolate)
-    3. Create fresh arrays at new size with current firmness values
-    4. User edits/transformations will be applied after resize
+    2. Preserve existing master array values
+    3. If expanding (e.g., 17→26): extend array by repeating the last value
+    4. If shrinking (e.g., 26→17): trim array to new length
     
     Parameters
     ----------
@@ -128,20 +128,34 @@ def set_bed_size(bed_name: str) -> None:
         st.error(f"Unknown bed size: {bed_name}")
         return
     
+    # Get old length before changing bed size
+    old_length = get_array_length()
+    
     # Store new bed size
     st.session_state["bed_size"] = bed_name
     new_length, new_width = BED_SIZES[bed_name]
     
-    # Reinitialize all sleeper master arrays fresh at new size
-    # This discards old arrays and creates new ones
+    # Resize all sleeper master arrays while preserving values
     if "answers" in st.session_state:
         for side_key in ["sleeper_1", "sleeper_2"]:
             if side_key in st.session_state.answers:
-                # Get the firmness value to maintain user's preference
-                firmness = st.session_state.answers[side_key].get("firmness_value", 2)
-                # Create fresh array at new size (overwrites old array)
-                fresh_array = initialize_master_array(side_key, firmness, array_length=new_length)
-                st.session_state.answers[side_key]["master_array"] = fresh_array.tolist()
+                # Get existing master array
+                old_array = get_master_array(side_key, array_length=old_length)
+                
+                if new_length > old_length:
+                    # Expanding: extend array by repeating the last value
+                    extension_length = new_length - old_length
+                    last_value = old_array[-1]
+                    extension = np.full(extension_length, last_value, dtype=int)
+                    new_array = np.concatenate([old_array, extension])
+                elif new_length < old_length:
+                    # Shrinking: trim array to new length
+                    new_array = old_array[:new_length]
+                else:
+                    # Same length: no change needed
+                    new_array = old_array
+                
+                st.session_state.answers[side_key]["master_array"] = new_array.tolist()
 
 
 def get_bed_size() -> tuple:
