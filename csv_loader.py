@@ -180,7 +180,12 @@ def get_csv_data_from_session(side_key: str = "sleeper_1") -> Dict:
 
 
 def clear_csv_data(side_key: str = None) -> None:
-    """Clear CSV data from session state.
+    """Clear CSV data from session state and reset curve to manual mode.
+    
+    This will:
+    1. Remove the CSV pressure map data
+    2. Clear spline mode flags and knot data
+    3. Reset the master array to a flat array based on current firmness
     
     Parameters
     ----------
@@ -188,9 +193,55 @@ def clear_csv_data(side_key: str = None) -> None:
         Specific sleeper to clear. If None, clears all CSV data.
     """
     if "csv_data" not in st.session_state:
-        return
+        st.session_state.csv_data = {}
     
     if side_key is None:
+        # Clear all CSV data
         st.session_state.csv_data = {}
+        # Reset both sleepers to manual mode
+        for key in ["sleeper_1", "sleeper_2"]:
+            _reset_to_manual_mode(key)
     elif side_key in st.session_state.csv_data:
+        # Clear specific sleeper's CSV data
         del st.session_state.csv_data[side_key]
+        # Reset this sleeper to manual mode
+        _reset_to_manual_mode(side_key)
+
+
+def _reset_to_manual_mode(side_key: str) -> None:
+    """Reset a sleeper's curve to manual mode with flat array at current firmness.
+    
+    Parameters
+    ----------
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    """
+    import data_processing as dp
+    
+    if "answers" not in st.session_state:
+        return
+    
+    if side_key not in st.session_state.answers:
+        return
+    
+    sleeper_data = st.session_state.answers[side_key]
+    
+    # Get current firmness value (default to 2 if not set)
+    firmness = sleeper_data.get("firmness_value", 2)
+    
+    # Clear spline mode flags and data
+    sleeper_data.pop("use_scipy_spline", None)
+    sleeper_data.pop("spline_knots", None)
+    sleeper_data.pop("spline_smoothing", None)
+    sleeper_data.pop("curve_scale_percent", None)
+    sleeper_data.pop("curve_control_points", None)
+    sleeper_data.pop("original_pressure_1d", None)
+    sleeper_data.pop("original_firmness", None)
+    
+    # Reset to default 6 control points
+    sleeper_data["num_control_points"] = 6
+    
+    # Reinitialize master array to flat array at current firmness
+    array_length = dp.get_array_length()
+    master_array = dp.initialize_master_array(side_key, firmness, array_length)
+    dp.set_master_array(side_key, master_array)

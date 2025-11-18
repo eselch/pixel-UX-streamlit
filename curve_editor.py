@@ -20,6 +20,31 @@ import plotly.graph_objects as go
 import data_processing as dp
 
 
+def _is_spline_mode(side_key: str = "sleeper_1") -> bool:
+    """Check if the curve editor is in scipy spline mode (vs manual Hermite mode).
+    
+    Spline mode is enabled when pressure map data has been uploaded and fitted
+    with a scipy spline. In this mode, control points are the spline's knots.
+    
+    Parameters
+    ----------
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    
+    Returns
+    -------
+    bool
+        True if using scipy spline mode, False for manual Hermite mode
+    """
+    if "answers" not in st.session_state:
+        return False
+    
+    if side_key not in st.session_state.answers:
+        return False
+    
+    return st.session_state.answers[side_key].get("use_scipy_spline", False)
+
+
 def _piecewise_hermite_smooth(xs: np.ndarray, ys: np.ndarray, x_eval: np.ndarray) -> np.ndarray:
     """Piecewise cubic Hermite interpolation with smooth tangents at control points.
     
@@ -103,9 +128,10 @@ def get_interpolated_curve_lut(
 ) -> np.ndarray:
     """Generate a downsampled LUT array from the high-resolution interpolated curve.
     
-    This creates a 1D array by evaluating the smooth Hermite curve at each integer
-    position from 1 to array_length. This is the high-resolution version of the
-    curve shown in the curve editor, suitable for driving the pixel map.
+    This creates a 1D array by evaluating the curve at each integer position from
+    1 to array_length. The interpolation method depends on the mode:
+    - Manual mode: Uses piecewise Hermite spline with fixed control points
+    - Spline mode: Uses scipy UnivariateSpline rebuilt from edited knots
     
     Parameters
     ----------
@@ -114,7 +140,7 @@ def get_interpolated_curve_lut(
     array_length : int, optional
         Length of the output LUT array. If None, retrieves from session state.
     num_points : int
-        Number of control points used for interpolation
+        Number of control points used for interpolation (ignored in spline mode)
     value_range : Tuple[int, int]
         Allowed y value range (min, max)
     
@@ -130,22 +156,44 @@ def get_interpolated_curve_lut(
         vmin, vmax = value_range
         x_domain = (1, array_length)
         
-        # Get control point positions and values
+        # Get control point positions and values (mode-aware)
         xs, ys_float, xmin, xmax = _get_curve_data(side_key, array_length, x_domain, num_points)
         
-        # Round control point y values to integers
-        ys = np.round(ys_float).astype(int)
-        ys = np.clip(ys, vmin, vmax)
+        # Clip control point y values to value range
+        ys_float = np.clip(ys_float, vmin, vmax)
         
-        # Evaluate the smooth curve at each integer position
+        # Evaluate the curve at each integer position
         lut_x = np.arange(1, array_length + 1)
-        lut_y = _piecewise_hermite_smooth(xs, ys, lut_x)
-        lut_y = np.clip(lut_y, vmin, vmax)
         
-        # Round to integers for the LUT
+        if _is_spline_mode(side_key):
+            # === SPLINE MODE: Rebuild scipy spline from edited knots ===
+            try:
+                from scipy.interpolate import UnivariateSpline
+                
+                # Convert to 0-indexed for scipy
+                xs_0indexed = xs - 1
+                
+                # Use exact interpolation (s=0) to fit edited knots
+                spline = UnivariateSpline(xs_0indexed, ys_float, s=0, k=min(3, len(xs) - 1))
+                
+                # Evaluate spline at all positions
+                lut_x_0indexed = lut_x - 1
+                lut_y = spline(lut_x_0indexed)
+                
+            except Exception as e:
+                print(f"Spline mode interpolation failed for {side_key}: {e}")
+                # Fall back to Hermite if scipy fails
+                lut_y = _piecewise_hermite_smooth(xs, ys_float, lut_x)
+        else:
+            # === MANUAL MODE: Use piecewise Hermite interpolation ===
+            lut_y = _piecewise_hermite_smooth(xs, ys_float, lut_x)
+        
+        # Clip and round to integers
+        lut_y = np.clip(lut_y, vmin, vmax)
         lut_y = np.round(lut_y).astype(int)
         
         return lut_y
+        
     except Exception as e:
         # Return None if there's any error - will be caught by caller
         print(f"Error in get_interpolated_curve_lut for {side_key}: {e}")
@@ -161,6 +209,9 @@ def _get_curve_data(
 ) -> tuple:
     """Get control points and interpolated curve data without rendering.
     
+    In manual mode: Returns evenly-spaced control points from the master array.
+    In spline mode: Returns the scipy spline knot positions and values.
+    
     Parameters
     ----------
     side_key : str
@@ -170,19 +221,14 @@ def _get_curve_data(
     x_domain : Tuple[int, int], optional
         Domain of x (min, max). If None, derived from array_length.
     num_points : int
-        Number of control points
+        Number of control points (used in manual mode only)
     master_array : np.ndarray, optional
         The master array to use. If None, fetches from session state.
 
     Returns
     -------
-    np.ndarray
-        The updated master array after applying any control changes.
-    
-    Returns
-    -------
     tuple
-        (xs, ys, xmin, xmax) - control point positions and values
+        (xs, ys, xmin, xmax) - control point positions (1-indexed) and values
     """
     if array_length is None:
         array_length = dp.get_array_length()
@@ -201,19 +247,36 @@ def _get_curve_data(
     else:
         master_array = np.asarray(master_array)
     
-    # Check if a custom number of control points was set from pressure map
+    # === CHECK MODE ===
+    if _is_spline_mode(side_key):
+        # === SPLINE MODE: Return knot positions and values ===
+        spline_knots = st.session_state.answers[side_key].get("spline_knots", {})
+        knot_x = spline_knots.get("x", [])
+        knot_y = spline_knots.get("y", [])
+        
+        if len(knot_x) > 0 and len(knot_x) == len(knot_y):
+            xs = np.array(knot_x, dtype=int)
+            ys = np.array(knot_y, dtype=float)
+            return xs, ys, xmin, xmax
+        else:
+            # No valid knots, fall through to manual mode
+            pass
+    
+    # === MANUAL MODE: Return evenly-spaced control points ===
+    
+    # Check if a custom number of control points was set
     if "answers" in st.session_state and side_key in st.session_state.answers:
         stored_num_points = st.session_state.answers[side_key].get("num_control_points")
         if stored_num_points is not None:
             num_points = stored_num_points
     
-    # Check if custom control points exist from pressure map
+    # Check if custom control points exist (legacy support)
     custom_points = None
     if "answers" in st.session_state and side_key in st.session_state.answers:
         custom_points = st.session_state.answers[side_key].get("curve_control_points")
     
     if custom_points is not None and len(custom_points.get("x", [])) == num_points:
-        # Use custom control points from pressure map analysis
+        # Use custom control points
         xs = np.array(custom_points["x"], dtype=int)
     else:
         # Default control x positions (evenly spaced across domain)
@@ -221,7 +284,7 @@ def _get_curve_data(
         xs = np.round(xs).astype(int)
     
     # Get y values from master array at control point positions
-    # Directly sample the array at the xs positions (no interpolation)
+    # Directly sample the array at the xs positions (1-indexed)
     ys = np.array([master_array[x - 1] for x in xs], dtype=float)
     
     return xs, ys, xmin, xmax
@@ -237,6 +300,9 @@ def show_curve_controls(
 ) -> None:
     """Render control point tuning widgets (increment/decrement per point).
     
+    In manual mode: Updates master_array at control point positions.
+    In spline mode: Updates spline_knots and rebuilds master_array from spline.
+    
     Call this in your layout (e.g., in a column).
     
     Parameters
@@ -250,7 +316,7 @@ def show_curve_controls(
     value_range : Tuple[int, int]
         Allowed y value range (min, max)
     num_points : int
-        Number of control points to display
+        Number of control points to display (ignored in spline mode)
     master_array : np.ndarray, optional
         The master array to use. If None, fetches from session state.
     """
@@ -263,21 +329,27 @@ def show_curve_controls(
     xs, ys_float, _, _ = _get_curve_data(side_key, array_length, x_domain, num_points, master_array)
     vmin, vmax = value_range
     
+    # Actual number of control points (varies in spline mode)
+    actual_num_points = len(xs)
+    
     # Round y values to integers for display
     ys = np.round(ys_float).astype(int)
     ys = np.clip(ys, vmin, vmax)
     
     st.subheader("Firmness Tuning")
 
-    # Get base firmness to calculate offsets
+    # Get base firmness to calculate offsets (only used for display in manual mode)
     base_firmness = st.session_state.answers.get(side_key, {}).get("firmness_value", 2)
     
-    updated_master = master_array.copy()
     updated = False
+    is_spline = _is_spline_mode(side_key)
+    
+    # Track updated knot values for spline mode
+    updated_knot_y = ys_float.copy()
 
-    for i in range(num_points):
+    for i in range(actual_num_points):
         x_pos = int(xs[i])
-        current_value = int(updated_master[x_pos - 1])
+        current_value = int(ys[i])
         offset = current_value - base_firmness  # Calculate offset from base
 
         col_label, col_minus, col_plus = st.columns([2.5, 1, 1], gap="small")
@@ -287,22 +359,54 @@ def show_curve_controls(
         with col_minus:
             if st.button("−", key=f"{side_key}_decrease_{i}", use_container_width=True, type="secondary"):
                 if current_value > vmin:
-                    updated_master[x_pos - 1] = current_value - 1
-                    current_value = int(updated_master[x_pos - 1])
-                    offset = current_value - base_firmness
+                    updated_knot_y[i] = current_value - 1
                     updated = True
 
         with col_plus:
             if st.button("\+", key=f"{side_key}_increase_{i}", use_container_width=True, type="secondary"):
                 if current_value < vmax:
-                    updated_master[x_pos - 1] = current_value + 1
-                    current_value = int(updated_master[x_pos - 1])
-                    offset = current_value - base_firmness
+                    updated_knot_y[i] = current_value + 1
                     updated = True
 
     if updated:
-        updated_master = np.clip(updated_master, vmin, vmax).astype(int)
-        dp.set_master_array(side_key, updated_master)
+        if is_spline:
+            # === SPLINE MODE: Update spline knots and rebuild master array ===
+            updated_knot_y = np.clip(updated_knot_y, vmin, vmax)
+            
+            # Store updated knot Y values
+            st.session_state.answers[side_key]["spline_knots"]["y"] = updated_knot_y.tolist()
+            
+            # Rebuild master array from updated spline
+            try:
+                from scipy.interpolate import UnivariateSpline
+                
+                # Convert to 0-indexed for scipy
+                xs_0indexed = xs - 1
+                
+                # Use exact interpolation (s=0) to fit edited knots
+                spline = UnivariateSpline(xs_0indexed, updated_knot_y, s=0, k=min(3, len(xs) - 1))
+                
+                # Evaluate spline at all positions
+                x_all = np.arange(array_length)
+                master_array_new = spline(x_all)
+                master_array_new = np.clip(master_array_new, vmin, vmax)
+                master_array_new = np.round(master_array_new).astype(int)
+                
+                # Update master array
+                dp.set_master_array(side_key, master_array_new)
+                
+            except Exception as e:
+                print(f"Error rebuilding spline in show_curve_controls: {e}")
+        else:
+            # === MANUAL MODE: Update master array directly at control points ===
+            updated_master = master_array.copy()
+            
+            for i in range(actual_num_points):
+                x_pos = int(xs[i])
+                updated_master[x_pos - 1] = int(updated_knot_y[i])
+            
+            updated_master = np.clip(updated_master, vmin, vmax).astype(int)
+            dp.set_master_array(side_key, updated_master)
 
     return None
 
@@ -319,6 +423,9 @@ def show_curve_plot(
 ) -> None:
     """Render the curve plot visualization.
     
+    In manual mode: Uses Hermite interpolation with blue circles for control points.
+    In spline mode: Uses scipy spline interpolation with red diamonds for knots.
+    
     Call this in your layout (e.g., in a column).
     
     Parameters
@@ -334,24 +441,64 @@ def show_curve_plot(
     width/height : int
         Size of the plotly figure
     num_points : int
-        Number of control points to display
+        Number of control points to display (ignored in spline mode)
     master_array : np.ndarray, optional
         The master array to use. If None, fetches from session state.
     """
+    if array_length is None:
+        array_length = dp.get_array_length()
+    
     xs, ys_float, xmin, xmax = _get_curve_data(side_key, array_length, x_domain, num_points, master_array)
     vmin, vmax = value_range
     
-    # Round control point y values to integers to match the controls display
-    ys = np.round(ys_float).astype(int)
-    ys = np.clip(ys, vmin, vmax)
+    # Determine mode
+    is_spline = _is_spline_mode(side_key)
     
-    # Use piecewise Hermite interpolation for smooth curve display
+    # Clip y values
+    ys_float = np.clip(ys_float, vmin, vmax)
+    
+    # === GENERATE SMOOTH CURVE FOR DISPLAY ===
     plot_samples = 1024
     plot_x = np.linspace(xmin, xmax, plot_samples)
-    plot_y = _piecewise_hermite_smooth(xs, ys, plot_x)
+    
+    if is_spline:
+        # === SPLINE MODE: Use scipy spline interpolation ===
+        try:
+            from scipy.interpolate import UnivariateSpline
+            
+            # Convert to 0-indexed for scipy
+            xs_0indexed = xs - 1
+            
+            # Use exact interpolation (s=0) to fit knots
+            spline = UnivariateSpline(xs_0indexed, ys_float, s=0, k=min(3, len(xs) - 1))
+            
+            # Evaluate spline for smooth curve display
+            plot_x_0indexed = plot_x - 1
+            plot_y = spline(plot_x_0indexed)
+            
+        except Exception as e:
+            print(f"Spline plot interpolation failed for {side_key}: {e}")
+            # Fall back to Hermite if scipy fails
+            plot_y = _piecewise_hermite_smooth(xs, ys_float, plot_x)
+    else:
+        # === MANUAL MODE: Use piecewise Hermite interpolation ===
+        plot_y = _piecewise_hermite_smooth(xs, ys_float, plot_x)
+    
     plot_y = np.clip(plot_y, vmin, vmax)
 
     fig = go.Figure()
+    
+    # Set curve color and control point style based on mode
+    if is_spline:
+        curve_color = '#0492a8'
+        marker_symbol = 'diamond'
+        marker_size = 8
+        control_label = 'Point'
+    else:
+        curve_color = '#0492a8'  
+        marker_symbol = 'circle'
+        marker_size = 8
+        control_label = 'Point'
     
     # Add smooth curve
     fig.add_trace(go.Scatter(
@@ -359,7 +506,7 @@ def show_curve_plot(
         y=plot_y,
         mode='lines',
         name='Curve',
-        line=dict(color='#0492a8', width=2)
+        line=dict(color=curve_color, width=2)
     ))
     
     # Add pressure map data points if available, red dot overlay
@@ -367,7 +514,7 @@ def show_curve_plot(
         try:
             # Get the downsampled pressure map
             sensel_data = st.session_state.csv_data[side_key]["sensel_data"]
-            downsampled = dp.downsample_pressure_map(sensel_data, target_shape=(array_length if array_length else dp.get_array_length(), 9))
+            downsampled = dp.downsample_pressure_map(sensel_data, target_shape=(array_length, 9))
             
             # Convert to 1D using max per row
             pressure_1d = dp.pressure_map_to_1d_array(downsampled)
@@ -407,33 +554,35 @@ def show_curve_plot(
             # Create x positions (1-indexed row numbers)
             pressure_x = np.arange(1, len(pressure_1d) + 1)
             
-            # Add pressure data as red scatter points
-            fig.add_trace(go.Scatter(
-                x=pressure_x,
-                y=remapped_to_04,
-                mode='markers',
-                name='Pressure Data',
-                marker=dict(color='red', size=6, opacity=0.7)
-            ))
+            # Add pressure data as red scatter points (only if not in spline mode to avoid confusion)
+            # In spline mode, the curve IS the pressure data
+            if not is_spline:
+                fig.add_trace(go.Scatter(
+                    x=pressure_x,
+                    y=remapped_to_04,
+                    mode='markers',
+                    name='Pressure Data',
+                    marker=dict(color='red', size=6, opacity=0.7)
+                ))
         except Exception as e:
             # Silently ignore errors in pressure data overlay
             pass
     
-    # Add control points
+    # Add control points / knots
     fig.add_trace(go.Scatter(
         x=xs,
-        y=ys,
+        y=ys_float,
         mode='markers',
-        name='Control Points',
-        marker=dict(color='#0492a8', size=num_points)
+        name=f'{control_label}s',
+        marker=dict(color=curve_color, size=marker_size, symbol=marker_symbol)
     ))
     
-    # Add labels above each control point
-    for i, (x, y) in enumerate(zip(xs, ys)):
+    # Add labels above each control point / knot
+    for i, (x, y) in enumerate(zip(xs, ys_float)):
         fig.add_annotation(
             x=x,
             y=y,
-            text=f"Point {i+1}",
+            text=f"{control_label} {i+1}",
             showarrow=False,
             yshift=15,
             font=dict(size=12, color='#6e6f72'),
