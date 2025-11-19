@@ -697,6 +697,7 @@ def draw_pixel_map(
     use_container_width: bool = False,
     title: str = None,
     return_fig: bool = False,
+    title_font_size: int = 20,
 ) -> None:
     """Render a 2D firmness pixel map using Plotly heatmap.
     
@@ -829,7 +830,7 @@ def draw_pixel_map(
             text=title,
             x=0.5,
             xanchor='center',
-            font=dict(size=20)
+            font=dict(size=title_font_size)
         )
         layout_config['margin']['t'] = 40  # Add top margin for title
     

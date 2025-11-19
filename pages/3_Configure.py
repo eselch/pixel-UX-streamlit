@@ -338,7 +338,31 @@ def go_prev():
     st.switch_page("pages/2_Mapping.py")
 
 def export_data():
-    # Placeholder for export functionality
-    st.write("Export functionality to be implemented")
+    """Export the current configuration data as PDF."""
+    try:
+        import exporter
+        
+        # Show loading spinner while generating PDF
+        with st.spinner("Generating PDF report..."):
+            # Generate PDF report
+            pdf_bytes = exporter.generate_pdf_report()
+        
+        # Create timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"lovesac_config_{timestamp}.pdf"
+        
+        # Provide download button
+        st.download_button(
+            label="Download PDF Report",
+            data=pdf_bytes,
+            file_name=filename,
+            mime="application/pdf",
+            type="primary"
+        )
+        
+    except ValueError as e:
+        st.error(f"Export failed: {str(e)}")
+    except Exception as e:
+        st.error(f"An error occurred during export: {str(e)}")
 
 ui.nav_row(left_label="PREVIOUS", left_action=go_prev, right_label="EXPORT", right_action=export_data)
