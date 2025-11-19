@@ -23,6 +23,92 @@ BED_SIZES = {
     "St George King": (26, 26),
 }
 
+# Body part positions as percentages of height
+# Used to calculate control point positions based on sleeper height
+BODY_PART_PERCENTAGES = {
+    1: 0.0,    # Head (100% of height)
+    2: 0.18,   # Shoulder
+    3: 0.35,   # Waist
+    4: 0.49,   # Hip
+    5: 0.68,   # Knee
+    6: 1.0,    # Feet (0")
+}
+
+BODY_PART_LABELS = {
+    1: "Head",
+    2: "Shoulder",
+    3: "Waist",
+    4: "Hip",
+    5: "Knee",
+    6: "Feet",
+}
+
+# Conversion factor: inches to grid units
+INCHES_PER_GRID_UNIT = 4.19
+
+
+def get_body_part_control_points(side_key: str, array_length: int = None) -> np.ndarray:
+    """Calculate control point positions based on sleeper height and body part positions.
+    
+    Converts sleeper height (in inches) to grid positions using body part percentages.
+    Each grid unit = 4.19 inches.
+    
+    Parameters
+    ----------
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    array_length : int, optional
+        Length of the array. If None, uses current bed size length.
+    
+    Returns
+    -------
+    np.ndarray
+        Array of 6 control point positions (1-indexed) based on body parts
+    
+    Examples
+    --------
+    For a 68" tall person:
+    - Point 1 (Head): 68" → grid position 17
+    - Point 2 (Shoulder): 68 * 0.82 = 55.76" → grid position 14
+    - Point 3 (Waist): 68 * 0.65 = 44.2" → grid position 11
+    - Point 4 (Hip): 68 * 0.51 = 34.68" → grid position 9
+    - Point 5 (Knee): 68 * 0.32 = 21.76" → grid position 6
+    - Point 6 (Feet): 0" → grid position 1
+    """
+    if array_length is None:
+        array_length = get_array_length()
+    
+    # Get sleeper height from session state (default to 65 inches)
+    height_inches = 65.0  # Default
+    if "answers" in st.session_state and side_key in st.session_state.answers:
+        height_str = st.session_state.answers[side_key].get("setting2", "65")
+        try:
+            # Handle empty string or invalid input
+            if height_str and height_str.strip():
+                height_inches = float(height_str)
+            # Ensure height is reasonable (between 40 and 96 inches)
+            height_inches = np.clip(height_inches, 40, 96)
+        except (ValueError, TypeError):
+            # If conversion fails, use default
+            height_inches = 65.0
+    
+    # Calculate positions for each body part
+    positions = []
+    for point_num in range(1, 7):  # Points 1-6
+        # Get height at this body part (in inches)
+        height_at_part = height_inches * BODY_PART_PERCENTAGES[point_num]
+        
+        # Convert inches to grid units (1-indexed)
+        # Each grid unit = 4.19 inches, adjust to align 65" with position 16
+        grid_position = (height_at_part / INCHES_PER_GRID_UNIT) + 0.5
+        
+        # Clip to valid range and round to nearest integer
+        grid_position = int(np.round(np.clip(grid_position, 1, array_length)))
+        
+        positions.append(grid_position)
+    
+    return np.array(positions, dtype=int)
+
 
 def set_bed_size(bed_name: str) -> None:
     """Set the bed size and reinitialize master arrays fresh at new dimensions.
@@ -333,12 +419,29 @@ def apply_pressure_map_to_curve(
         # Initialize at 2.5% of array length (halfway on slider)
         smoothing_factor = array_length * 0.025
         
-        # Use cubic spline (k=3) for smooth curves
-        spline = UnivariateSpline(x_data, inverted, s=smoothing_factor, k=3)
+        # Add phantom boundary points to reduce end curvature
+        # Place phantom knots 3 cells beyond each end at the same Y value as endpoints
+        phantom_offset = 3
+        x_extended = np.concatenate([
+            [-phantom_offset],
+            x_data,
+            [array_length - 1 + phantom_offset]
+        ])
+        y_extended = np.concatenate([
+            [inverted[0]],
+            inverted,
+            [inverted[-1]]
+        ])
+        
+        # Fit spline on extended data
+        spline = UnivariateSpline(x_extended, y_extended, s=smoothing_factor, k=3)
         
         # Get the spline's internal knots (these become the control points)
-        # UnivariateSpline internal knots exclude the boundary knots
-        knots_internal = spline.get_knots()
+        # Filter knots to only those in the original domain [0, array_length-1]
+        knots_internal_extended = spline.get_knots()
+        knots_internal = knots_internal_extended[
+            (knots_internal_extended >= 0) & (knots_internal_extended < array_length)
+        ]
         
         # Ensure we have at least 4 knots for good control
         min_knots = 4
@@ -405,8 +508,8 @@ def apply_pressure_map_to_curve(
         # Store the remap range
         st.session_state.answers[side_key]["remap_range"] = remap_range
         
-        # Store the initial curve scale as 100% (fills full graph range)
-        st.session_state.answers[side_key]["curve_scale_percent"] = 100.0
+        # Store the initial curve scale as 50% (midpoint of available range)
+        st.session_state.answers[side_key]["curve_scale_percent"] = 50.0
         
         # Store the original firmness at time of upload (for calculating offsets later)
         original_firmness = st.session_state.answers[side_key].get("firmness_value", 2)
@@ -510,14 +613,30 @@ def refit_spline_from_original(
         # Create x data (0-indexed positions)
         x_data = np.arange(array_length)
         
-        # Fit a smoothing spline to the adjusted data
-        spline = UnivariateSpline(x_data, adjusted_data, s=smoothing_factor, k=3)
+        # Add phantom boundary points to reduce end curvature
+        phantom_offset = 3
+        x_extended = np.concatenate([
+            [-phantom_offset],
+            x_data,
+            [array_length - 1 + phantom_offset]
+        ])
+        y_extended = np.concatenate([
+            [adjusted_data[0]],
+            adjusted_data,
+            [adjusted_data[-1]]
+        ])
         
-        # Get the spline's internal knots
-        knots_internal = spline.get_knots()
+        # Fit a smoothing spline to the extended adjusted data
+        spline = UnivariateSpline(x_extended, y_extended, s=smoothing_factor, k=3)
         
-        # Ensure we have at least 4 knots for good control
-        min_knots = 4
+        # Get the spline's internal knots, filtered to original domain
+        knots_internal_extended = spline.get_knots()
+        knots_internal = knots_internal_extended[
+            (knots_internal_extended >= 0) & (knots_internal_extended < array_length)
+        ]
+        
+        # Ensure we have at least 6 knots for good control
+        min_knots = 6
         if len(knots_internal) < min_knots:
             # Use exact interpolation through more points
             num_knots = max(min_knots, array_length // 3)
@@ -577,6 +696,7 @@ def draw_pixel_map(
     value_range: tuple = None,
     use_container_width: bool = False,
     title: str = None,
+    return_fig: bool = False,
 ) -> None:
     """Render a 2D firmness pixel map using Plotly heatmap.
     
@@ -602,6 +722,13 @@ def draw_pixel_map(
         - None: defaults to (0, 4) for backward compatibility
     title : str, optional
         Title to display above the heatmap
+    return_fig : bool
+        If True, return the figure object instead of displaying it
+    
+    Returns
+    -------
+    go.Figure or None
+        Plotly figure object if return_fig=True, otherwise None
     """
     # Default colorscale if none provided (blue gradient for firmness levels 0-4)
     if colorscale is None:
@@ -708,7 +835,10 @@ def draw_pixel_map(
     
     fig.update_layout(**layout_config)
     
-    st.plotly_chart(fig, use_container_width=use_container_width, config={'staticPlot': True})
+    if return_fig:
+        return fig
+    else:
+        st.plotly_chart(fig, use_container_width=use_container_width, config={'staticPlot': True})
 
 
 def initialize_master_array(side_key: str, firmness_value: int = 2, array_length: int = None) -> np.ndarray:

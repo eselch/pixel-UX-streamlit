@@ -162,31 +162,10 @@ def get_interpolated_curve_lut(
         # Clip control point y values to value range
         ys_float = np.clip(ys_float, vmin, vmax)
         
-        # Evaluate the curve at each integer position
+        # Evaluate the curve at each integer position using Hermite interpolation
+        # (consistent display regardless of mode)
         lut_x = np.arange(1, array_length + 1)
-        
-        if _is_spline_mode(side_key):
-            # === SPLINE MODE: Rebuild scipy spline from edited knots ===
-            try:
-                from scipy.interpolate import UnivariateSpline
-                
-                # Convert to 0-indexed for scipy
-                xs_0indexed = xs - 1
-                
-                # Use exact interpolation (s=0) to fit edited knots
-                spline = UnivariateSpline(xs_0indexed, ys_float, s=0, k=min(3, len(xs) - 1))
-                
-                # Evaluate spline at all positions
-                lut_x_0indexed = lut_x - 1
-                lut_y = spline(lut_x_0indexed)
-                
-            except Exception as e:
-                print(f"Spline mode interpolation failed for {side_key}: {e}")
-                # Fall back to Hermite if scipy fails
-                lut_y = _piecewise_hermite_smooth(xs, ys_float, lut_x)
-        else:
-            # === MANUAL MODE: Use piecewise Hermite interpolation ===
-            lut_y = _piecewise_hermite_smooth(xs, ys_float, lut_x)
+        lut_y = _piecewise_hermite_smooth(xs, ys_float, lut_x)
         
         # Clip and round to integers
         lut_y = np.clip(lut_y, vmin, vmax)
@@ -262,29 +241,12 @@ def _get_curve_data(
             # No valid knots, fall through to manual mode
             pass
     
-    # === MANUAL MODE: Return evenly-spaced control points ===
+    # === MANUAL MODE: Return body-part-based control points ===
     
-    # Check if a custom number of control points was set
-    if "answers" in st.session_state and side_key in st.session_state.answers:
-        stored_num_points = st.session_state.answers[side_key].get("num_control_points")
-        if stored_num_points is not None:
-            num_points = stored_num_points
+    # Use body part control points based on sleeper height
+    xs = dp.get_body_part_control_points(side_key, array_length=array_length)
     
-    # Check if custom control points exist (legacy support)
-    custom_points = None
-    if "answers" in st.session_state and side_key in st.session_state.answers:
-        custom_points = st.session_state.answers[side_key].get("curve_control_points")
-    
-    if custom_points is not None and len(custom_points.get("x", [])) == num_points:
-        # Use custom control points
-        xs = np.array(custom_points["x"], dtype=int)
-    else:
-        # Default control x positions (evenly spaced across domain)
-        xs = np.linspace(xmin, xmax, num_points)
-        xs = np.round(xs).astype(int)
-    
-    # Get y values from master array at control point positions
-    # Directly sample the array at the xs positions (1-indexed)
+    # Get y values from master array at control point positions (1-indexed)
     ys = np.array([master_array[x - 1] for x in xs], dtype=float)
     
     return xs, ys, xmin, xmax
@@ -351,10 +313,19 @@ def show_curve_controls(
         x_pos = int(xs[i])
         current_value = int(ys[i])
         offset = current_value - base_firmness  # Calculate offset from base
+        
+        # Get label based on mode
+        if is_spline:
+            # Spline mode: show point number and row
+            label = f"Point {i+1} · Row {x_pos}"
+        else:
+            # Manual mode: show body part label
+            body_part = dp.BODY_PART_LABELS.get(i+1, f"Point {i+1}")
+            label = f"{body_part} · Row {x_pos}"
 
         col_label, col_minus, col_plus = st.columns([2.5, 1, 1], gap="small")
         with col_label:
-            st.markdown(f"**Point {i+1} · Row {x_pos}**")
+            st.markdown(f"**{label}**")
 
         with col_minus:
             if st.button("−", key=f"{side_key}_decrease_{i}", use_container_width=True, type="secondary"):
@@ -369,44 +340,20 @@ def show_curve_controls(
                     updated = True
 
     if updated:
+        # Store updated knot Y values
+        updated_knot_y = np.clip(updated_knot_y, vmin, vmax)
+        
         if is_spline:
-            # === SPLINE MODE: Update spline knots and rebuild master array ===
-            updated_knot_y = np.clip(updated_knot_y, vmin, vmax)
-            
-            # Store updated knot Y values
             st.session_state.answers[side_key]["spline_knots"]["y"] = updated_knot_y.tolist()
-            
-            # Rebuild master array from updated spline
-            try:
-                from scipy.interpolate import UnivariateSpline
-                
-                # Convert to 0-indexed for scipy
-                xs_0indexed = xs - 1
-                
-                # Use exact interpolation (s=0) to fit edited knots
-                spline = UnivariateSpline(xs_0indexed, updated_knot_y, s=0, k=min(3, len(xs) - 1))
-                
-                # Evaluate spline at all positions
-                x_all = np.arange(array_length)
-                master_array_new = spline(x_all)
-                master_array_new = np.clip(master_array_new, vmin, vmax)
-                master_array_new = np.round(master_array_new).astype(int)
-                
-                # Update master array
-                dp.set_master_array(side_key, master_array_new)
-                
-            except Exception as e:
-                print(f"Error rebuilding spline in show_curve_controls: {e}")
-        else:
-            # === MANUAL MODE: Update master array directly at control points ===
-            updated_master = master_array.copy()
-            
-            for i in range(actual_num_points):
-                x_pos = int(xs[i])
-                updated_master[x_pos - 1] = int(updated_knot_y[i])
-            
-            updated_master = np.clip(updated_master, vmin, vmax).astype(int)
-            dp.set_master_array(side_key, updated_master)
+        
+        # Rebuild master array using Hermite interpolation (same for both modes)
+        x_all = np.arange(1, array_length + 1)
+        master_array_new = _piecewise_hermite_smooth(xs, updated_knot_y, x_all)
+        master_array_new = np.clip(master_array_new, vmin, vmax)
+        master_array_new = np.round(master_array_new).astype(int)
+        
+        # Update master array
+        dp.set_master_array(side_key, master_array_new)
 
     return None
 
@@ -420,7 +367,8 @@ def show_curve_plot(
     height: int = 320,
     num_points: int = 6,
     master_array: np.ndarray = None,
-) -> None:
+    return_fig: bool = False,
+):
     """Render the curve plot visualization.
     
     In manual mode: Uses Hermite interpolation with blue circles for control points.
@@ -444,6 +392,13 @@ def show_curve_plot(
         Number of control points to display (ignored in spline mode)
     master_array : np.ndarray, optional
         The master array to use. If None, fetches from session state.
+    return_fig : bool
+        If True, return the figure object instead of displaying it
+    
+    Returns
+    -------
+    go.Figure or None
+        Plotly figure object if return_fig=True, otherwise None
     """
     if array_length is None:
         array_length = dp.get_array_length()
@@ -458,31 +413,10 @@ def show_curve_plot(
     ys_float = np.clip(ys_float, vmin, vmax)
     
     # === GENERATE SMOOTH CURVE FOR DISPLAY ===
+    # Always use Hermite interpolation for consistent display regardless of mode
     plot_samples = 1024
     plot_x = np.linspace(xmin, xmax, plot_samples)
-    
-    if is_spline:
-        # === SPLINE MODE: Use scipy spline interpolation ===
-        try:
-            from scipy.interpolate import UnivariateSpline
-            
-            # Convert to 0-indexed for scipy
-            xs_0indexed = xs - 1
-            
-            # Use exact interpolation (s=0) to fit knots
-            spline = UnivariateSpline(xs_0indexed, ys_float, s=0, k=min(3, len(xs) - 1))
-            
-            # Evaluate spline for smooth curve display
-            plot_x_0indexed = plot_x - 1
-            plot_y = spline(plot_x_0indexed)
-            
-        except Exception as e:
-            print(f"Spline plot interpolation failed for {side_key}: {e}")
-            # Fall back to Hermite if scipy fails
-            plot_y = _piecewise_hermite_smooth(xs, ys_float, plot_x)
-    else:
-        # === MANUAL MODE: Use piecewise Hermite interpolation ===
-        plot_y = _piecewise_hermite_smooth(xs, ys_float, plot_x)
+    plot_y = _piecewise_hermite_smooth(xs, ys_float, plot_x)
     
     plot_y = np.clip(plot_y, vmin, vmax)
 
@@ -555,14 +489,14 @@ def show_curve_plot(
     # Set curve color and control point style based on mode
     if is_spline:
         curve_color = '#0492a8'
-        marker_symbol = 'diamond'
+        marker_symbol = 'circle'
         marker_size = 8
-        control_label = 'Point'
+        control_label = 'PT'
     else:
         curve_color = '#0492a8'  
         marker_symbol = 'circle'
         marker_size = 8
-        control_label = 'Point'
+        control_label = 'PT'
     
     # Add smooth curve
     fig.add_trace(go.Scatter(
@@ -584,10 +518,18 @@ def show_curve_plot(
     
     # Add labels above each control point / knot
     for i, (x, y) in enumerate(zip(xs, ys_float)):
+        # Get label based on mode
+        if is_spline:
+            # Spline mode: show point number
+            label_text = f"{control_label} {i+1}"
+        else:
+            # Manual mode: show body part label
+            label_text = dp.BODY_PART_LABELS.get(i+1, f"Point {i+1}")
+        
         fig.add_annotation(
             x=x,
             y=y,
-            text=f"{control_label} {i+1}",
+            text=label_text,
             showarrow=False,
             yshift=15,
             font=dict(size=12, color='#6e6f72'),
@@ -596,6 +538,34 @@ def show_curve_plot(
             borderwidth=1,
             borderpad=2
         )
+    
+    # In spline mode, add body part location overlays
+    if is_spline:
+        body_part_positions = dp.get_body_part_control_points(side_key, array_length=array_length)
+        for i, x_pos in enumerate(body_part_positions):
+            body_part_label = dp.BODY_PART_LABELS.get(i+1, "")
+            
+            # Add vertical line for body part location
+            fig.add_vline(
+                x=x_pos,
+                line_dash="solid",
+                line_color="rgba(66, 165, 245, 0.4)",  # Semi-transparent blue
+                line_width=2
+            )
+            
+            # Add label at bottom of chart for body part
+            fig.add_annotation(
+                x=x_pos,
+                y=vmin,
+                text=body_part_label,
+                showarrow=False,
+                yshift=10,
+                font=dict(size=10, color='rgba(66, 165, 245, 0.8)'),
+                bgcolor='rgba(255, 255, 255, 0.8)',
+                bordercolor='rgba(66, 165, 245, 0.3)',
+                borderwidth=1,
+                borderpad=2
+            )
     
     # Add custom gridlines offset by 0.5 to be between numbers
     for i in np.arange(int(xmin) + 0.5, int(xmax), 1):
@@ -616,7 +586,10 @@ def show_curve_plot(
         margin=dict(l=60, r=20, t=20, b=40)  # Reduce top margin
     )
     
-    st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
+    if return_fig:
+        return fig
+    else:
+        st.plotly_chart(fig, use_container_width=True, config={'staticPlot': True})
 
 
 def show_curve_editor(

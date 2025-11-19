@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import datetime
 import common as ui
 import data_processing as dp
 from curve_editor import show_curve_plot, show_curve_controls, get_interpolated_curve_lut
@@ -150,14 +151,14 @@ with col2:
         is_spline_mode = st.session_state.answers.get(side_key, {}).get("use_scipy_spline", False)
         
         if is_spline_mode:
-            st.subheader("Curve Scale")
+            st.subheader("Firmness Range")
             
             # Get current scale percentage from session state
             current_scale_percent = st.session_state.answers.get(side_key, {}).get("curve_scale_percent", 50.0)
             
             # Create slider for curve scale (1% to 100%)
             curve_scale_percent = st.slider(
-                "Curve Scale",
+                "Firmness Range",
                 min_value=1.0,
                 max_value=100.0,
                 value=current_scale_percent,
@@ -195,17 +196,17 @@ with col2:
             
             # Get current smoothing factor from session state
             array_length = dp.get_array_length()
-            default_smoothing = array_length * 0.025  # 2.5% default (halfway on slider)
+            default_smoothing = array_length * 0.05  # 5% default (conservative midpoint)
             current_smoothing = st.session_state.answers.get(side_key, {}).get("spline_smoothing", default_smoothing)
             
             # Create slider for smoothing factor (0 = exact fit, higher = smoother)
             # Display as percentage of array length for intuitive control
-            smoothing_percent = (current_smoothing / array_length) * 100.0 if array_length > 0 else 2.5
+            smoothing_percent = (current_smoothing / array_length) * 100.0 if array_length > 0 else 5.0
             
             smoothing_percent = st.slider(
                 "Curve Smoothing",
                 min_value=0.01,
-                max_value=5.00,
+                max_value=25.00,
                 value=smoothing_percent,
                 step=0.5,
                 format="%.1f%%",
@@ -312,8 +313,8 @@ with col1:
     ]
 
     # Center the heatmap and curve plot using Streamlit column layout (works on Cloud)
-    heatmap_cols = st.columns([1, 7, 1])
-    with heatmap_cols[1]:
+    heatmap_cols = st.columns([10, 1])
+    with heatmap_cols[0]:
         dp.draw_pixel_map(
             pixel_map_2d,
             height=500,
@@ -321,8 +322,8 @@ with col1:
             title=heatmap_title,
         )
 
-    curve_cols = st.columns([1, 7, 1])
-    with curve_cols[1]:
+    curve_cols = st.columns([10, 1])
+    with curve_cols[0]:
         show_curve_plot(side_key=side_key, height=200, width=None)
 
 st.markdown("---")
@@ -336,4 +337,8 @@ with st.expander("🔍 Debug: Session State"):
 def go_prev():
     st.switch_page("pages/2_Mapping.py")
 
-ui.nav_row(left_label="PREVIOUS", left_action=go_prev, right_label=None, right_action=None)
+def export_data():
+    # Placeholder for export functionality
+    st.write("Export functionality to be implemented")
+
+ui.nav_row(left_label="PREVIOUS", left_action=go_prev, right_label="EXPORT", right_action=export_data)

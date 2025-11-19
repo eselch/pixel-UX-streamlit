@@ -116,3 +116,14 @@ def render_survey_questions(side_key: str):
         key=f"{side_key}_gender",
         horizontal=True
     )
+
+# Question 7: Notes
+    st.subheader("Notes")
+    st.session_state.answers[side_key]["notes"] = st.text_area(
+        "Add any additional notes:",
+        value=st.session_state.answers[side_key].get("notes", ""),
+        label_visibility="collapsed",
+        key=f"{side_key}_notes",
+        height=100,
+        placeholder="Enter notes here..."
+    )
