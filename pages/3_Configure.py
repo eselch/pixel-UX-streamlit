@@ -331,12 +331,6 @@ with col1:
 
 st.markdown("---")
 
-# Debug: Show session state
-with st.expander("🔍 Debug: Session State"):
-    import json
-    st.json(st.session_state.to_dict())
-
-
 def go_prev():
     st.switch_page("pages/2_Mapping.py")
 
