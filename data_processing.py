@@ -111,13 +111,12 @@ def get_body_part_control_points(side_key: str, array_length: int = None) -> np.
 
 
 def set_bed_size(bed_name: str) -> None:
-    """Set the bed size and reinitialize master arrays fresh at new dimensions.
+    """Set the bed size and preserve/resize master arrays to new dimensions.
     
     When bed size changes:
     1. Store new bed size in session state
-    2. Discard old master arrays (don't interpolate)
-    3. Create fresh arrays at new size with current firmness values
-    4. User edits/transformations will be applied after resize
+    2. Preserve master array shape by extending or trimming
+    3. Extends by repeating last value, trims from end
     
     Parameters
     ----------
@@ -128,20 +127,38 @@ def set_bed_size(bed_name: str) -> None:
         st.error(f"Unknown bed size: {bed_name}")
         return
     
-    # Store new bed size
+    # Get old and new dimensions
+    old_length = get_array_length()
     st.session_state["bed_size"] = bed_name
     new_length, new_width = BED_SIZES[bed_name]
     
-    # Reinitialize all sleeper master arrays fresh at new size
-    # This discards old arrays and creates new ones
+    # Preserve and resize master arrays for each sleeper
     if "answers" in st.session_state:
         for side_key in ["sleeper_1", "sleeper_2"]:
             if side_key in st.session_state.answers:
-                # Get the firmness value to maintain user's preference
-                firmness = st.session_state.answers[side_key].get("firmness_value", 2)
-                # Create fresh array at new size (overwrites old array)
-                fresh_array = initialize_master_array(side_key, firmness, array_length=new_length)
-                st.session_state.answers[side_key]["master_array"] = fresh_array.tolist()
+                sleeper_data = st.session_state.answers[side_key]
+                
+                # Get existing master array
+                if "master_array" in sleeper_data:
+                    old_array = np.array(sleeper_data["master_array"], dtype=int)
+                    
+                    if new_length > old_length:
+                        # EXTEND: Repeat last value for new cells
+                        extension = np.full(new_length - old_length, old_array[-1], dtype=int)
+                        new_array = np.concatenate([old_array, extension])
+                    elif new_length < old_length:
+                        # TRIM: Keep only first new_length values
+                        new_array = old_array[:new_length]
+                    else:
+                        # Same length, no change needed
+                        new_array = old_array
+                    
+                    sleeper_data["master_array"] = new_array.tolist()
+                else:
+                    # No existing array, create fresh one
+                    firmness = sleeper_data.get("firmness_value", 2)
+                    fresh_array = initialize_master_array(side_key, firmness, array_length=new_length)
+                    sleeper_data["master_array"] = fresh_array.tolist()
 
 
 def get_bed_size() -> tuple:
@@ -150,9 +167,9 @@ def get_bed_size() -> tuple:
     Returns
     -------
     tuple
-        (length, width) for the selected bed size, defaults to Queen if not set
+        (length, width) for the selected bed size, defaults to King if not set
     """
-    bed_name = st.session_state.get("bed_size", "Queen")
+    bed_name = st.session_state.get("bed_size", "King")
     return BED_SIZES[bed_name]
 
 
@@ -839,7 +856,15 @@ def draw_pixel_map(
     if return_fig:
         return fig
     else:
+        # Wrap the plotly chart in HTML with CSS 3D transform for perspective effect
+        # First rotate 90 degrees, then apply 35 degree perspective tilt
+        html_wrapper = f'''
+        <div style="perspective: 1200px; width: 100%; display: flex; justify-content: center; margin: 20px 0;">
+            <div id="pixel-map-container" style="transform: rotateZ(-90deg) rotateX(35deg); transform-origin: center center; transform-style: preserve-3d;">
+        '''
+        st.markdown(html_wrapper, unsafe_allow_html=True)
         st.plotly_chart(fig, use_container_width=use_container_width, config={'staticPlot': True})
+        st.markdown('</div></div>', unsafe_allow_html=True)
 
 
 def initialize_master_array(side_key: str, firmness_value: int = 2, array_length: int = None) -> np.ndarray:

@@ -12,6 +12,8 @@ The function reads/writes to:
     st.session_state.answers[side_key]["master_array"]
 """
 from typing import Optional, Tuple
+import base64
+from pathlib import Path
 
 import numpy as np
 import streamlit as st
@@ -43,6 +45,136 @@ def _is_spline_mode(side_key: str = "sleeper_1") -> bool:
         return False
     
     return st.session_state.answers[side_key].get("use_scipy_spline", False)
+
+
+def render_body_silhouette(
+    side_key: str = "sleeper_1",
+    height: int = 200,
+    array_length: int = None,
+) -> None:
+    """Render a body silhouette image overlay aligned with curve plot gridlines.
+    
+    Creates a responsive container with the body image positioned to align
+    head-to-feet with the Plotly chart's x-axis (row 1 to row array_length).
+    Uses CSS percentage-based positioning so it scales with any container width.
+    
+    Parameters
+    ----------
+    side_key : str
+        The sleeper identifier ("sleeper_1" or "sleeper_2")
+    height : int
+        Height in pixels (should match the curve plot height)
+    array_length : int, optional
+        Length of the master array. If None, retrieves from session state.
+    """
+    if array_length is None:
+        array_length = dp.get_array_length()
+    
+    # Get sleeper height to calculate body length in grid units
+    height_inches = 65.0  # Default
+    if "answers" in st.session_state and side_key in st.session_state.answers:
+        height_str = st.session_state.answers[side_key].get("setting2", "65")
+        try:
+            if height_str and height_str.strip():
+                height_inches = float(height_str)
+            height_inches = np.clip(height_inches, 40, 96)
+        except (ValueError, TypeError):
+            height_inches = 65.0
+    
+    # Calculate body length in grid units (cells)
+    # Each grid unit = 4.19 inches
+    body_length_cells = height_inches / dp.INCHES_PER_GRID_UNIT
+    # Clip to array length to prevent overflow
+    body_length_cells = min(body_length_cells, array_length)
+    
+    # Get sleep position from session state to choose appropriate image
+    sleep_positions_to_render = []  # List of positions to layer
+    if "answers" in st.session_state and side_key in st.session_state.answers:
+        # Check sleep_positions list (from Profile page)
+        positions = st.session_state.answers[side_key].get("sleep_positions", [])
+        if positions and len(positions) > 0:
+            # Map all selected positions to image names
+            for pos in positions:
+                if "Front" in pos or "Stomach" in pos:
+                    if "Front" not in sleep_positions_to_render:
+                        sleep_positions_to_render.append("Front")
+                elif "Back" in pos:
+                    if "Back" not in sleep_positions_to_render:
+                        sleep_positions_to_render.append("Back")
+                elif "Side" in pos:
+                    if "Side" not in sleep_positions_to_render:
+                        sleep_positions_to_render.append("Side")
+        # Fallback: check old setting5 field if sleep_positions not found
+        elif "setting5" in st.session_state.answers[side_key]:
+            position_value = st.session_state.answers[side_key].get("setting5", "")
+            if "Back" in position_value:
+                sleep_positions_to_render.append("Back")
+            if "Side" in position_value:
+                sleep_positions_to_render.append("Side")
+            if "Front" in position_value or "Stomach" in position_value:
+                sleep_positions_to_render.append("Front")
+    
+    # Default to Side if nothing selected
+    if not sleep_positions_to_render:
+        sleep_positions_to_render = ["Side"]
+    
+    # Load and encode all selected position images
+    images_to_render = []
+    for sleep_position in sleep_positions_to_render:
+        image_filename = f"{sleep_position}@2000x.png"
+        image_path = Path(__file__).parent / image_filename
+        
+        # Encode image as base64 for inline embedding
+        try:
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+            image_b64 = base64.b64encode(image_bytes).decode()
+            image_data_uri = f"data:image/png;base64,{image_b64}"
+            images_to_render.append(image_data_uri)
+        except FileNotFoundError:
+            # Skip if image not found
+            st.warning(f"Body silhouette image not found: {image_filename}")
+            continue
+    
+    # If no images were successfully loaded, return early
+    if not images_to_render:
+        return
+    
+    # Calculate positioning based on Plotly chart layout
+    # Chart margins: left=60px, right=20px, top=20px, bottom=40px
+    # X-axis range: [0.5, array_length + 0.5]
+    # Body should span from row 1 (head) for body_length_cells
+    
+    # In data coordinates:
+    # Row 1 (head) is at x=1, which maps to position (0.5 / (array_length + 1)) of plot area
+    # Body ends at x=body_length_cells (the actual row number where feet are)
+    
+    x_range = array_length + 1  # Total x-axis span in data units (0.5 to array_length + 0.5)
+    
+    # Fractional positions in plot area (0 to 1)
+    # Head starts at left edge of plot area (x=0.5, the very start)
+    head_fraction = -0.03  # Start at left edge of plot area
+    # Feet end 0.5 cells past the body length
+    feet_position = body_length_cells + 1  # End position 0.5 cells past feet marker
+    feet_fraction = feet_position / x_range
+    body_width_fraction = feet_fraction - head_fraction
+    
+    # Create HTML/CSS for body silhouette images positioned above the graph
+    # Build image tags for each position
+    # Calculate pixel positions as percentages for cleaner CSS
+    left_percent = (head_fraction * 100)
+    width_percent = (body_width_fraction * 100)
+    
+    img_tags = ""
+    for idx, image_data_uri in enumerate(images_to_render):
+        # Layer multiple images with slightly different opacity for visual distinction
+        opacity = 0.3 if len(images_to_render) == 1 else 0.25 + (idx * 0.05)
+        img_tags += f'<img src="{image_data_uri}" style="position: absolute; left: calc(60px + {left_percent:.4f}% * (100% - 80px) / 100%); top: 0px; width: calc({width_percent:.4f}% * (100% - 80px) / 100%); height: 100%; object-fit: contain; object-position: center; opacity: {opacity:.2f}; pointer-events: none; z-index: {1000 + idx};"/>'
+    
+    # Container sits above the chart with negative margins to reduce spacing
+    html_content = f'<div style="position: relative; width: 100%; height: {height}px; margin-top: -40px; margin-bottom: -80px; pointer-events: none;">{img_tags}</div>'
+    
+    st.markdown(html_content, unsafe_allow_html=True)
 
 
 def _piecewise_hermite_smooth(xs: np.ndarray, ys: np.ndarray, x_eval: np.ndarray) -> np.ndarray:
@@ -442,33 +574,20 @@ def show_curve_plot(
             # Create x positions (1-indexed row numbers)
             pressure_x = np.arange(1, len(pressure_1d) + 1)
             
-            # Map each scaled value to a color using the same gradient as the heatmap
-            # Blue gradient: light blue (0) to dark blue (4)
-            def value_to_color(val):
-                """Map a value in range 0-4 to the blue gradient color."""
-                # Normalize to 0-1 range
-                normalized = val / 4.0
-                
-                # Define the color stops (same as heatmap)
-                if normalized <= 0.25:
-                    # Interpolate between 0.0 (#e3f2fd) and 0.25 (#90caf9)
-                    t = normalized / 0.25
-                    return f'rgba({int(227 + t * (144 - 227))}, {int(242 + t * (202 - 242))}, {int(253 + t * (249 - 253))}, 0.3)'
-                elif normalized <= 0.5:
-                    # Interpolate between 0.25 (#90caf9) and 0.5 (#42a5f5)
-                    t = (normalized - 0.25) / 0.25
-                    return f'rgba({int(144 + t * (66 - 144))}, {int(202 + t * (165 - 202))}, {int(249 + t * (245 - 249))}, 0.3)'
-                elif normalized <= 0.75:
-                    # Interpolate between 0.5 (#42a5f5) and 0.75 (#1e88e5)
-                    t = (normalized - 0.5) / 0.25
-                    return f'rgba({int(66 + t * (30 - 66))}, {int(165 + t * (136 - 165))}, {int(245 + t * (229 - 245))}, 0.3)'
-                else:
-                    # Interpolate between 0.75 (#1e88e5) and 1.0 (#0d47a1)
-                    t = (normalized - 0.75) / 0.25
-                    return f'rgba({int(30 + t * (13 - 30))}, {int(136 + t * (71 - 136))}, {int(229 + t * (161 - 229))}, 0.3)'
+            # Use Plotly's colorscale to match the heatmap
+            import plotly.colors as pc
             
-            # Create color array for each bar
-            bar_colors = [value_to_color(v) for v in scaled]
+            # Get colors from OrRd colorscale and convert to rgba with transparency
+            normalized_values = [v / 4.0 for v in scaled]
+            OrRd_colors = pc.sample_colorscale("OrRd", normalized_values)
+            
+            # Parse rgb strings and add alpha channel
+            bar_colors = []
+            for color in OrRd_colors:
+                # Extract RGB values from "rgb(r, g, b)" format
+                rgb_str = color.replace('rgb(', '').replace(')', '')
+                r, g, b = [int(x.strip()) for x in rgb_str.split(',')]
+                bar_colors.append(f'rgba({r}, {g}, {b}, 0.7)')
             
             # Add pressure data as bar graph background (inverted, from top down)
             # Use negative values with base at vmax to make bars extend downward
@@ -569,7 +688,7 @@ def show_curve_plot(
     
     # Add custom gridlines offset by 0.5 to be between numbers
     for i in np.arange(int(xmin) + 0.5, int(xmax), 1):
-        fig.add_vline(x=i, line_dash="solid", line_color="LightGray", line_width=1)
+        fig.add_vline(x=i, line_dash="solid", line_color="rgba(211, 211, 211, 0.3)", line_width=1)
     
     # Update layout
     fig.update_layout(
@@ -579,7 +698,7 @@ def show_curve_plot(
         height=height,
         width=width,
         xaxis=dict(range=[xmin - 0.5, xmax + 0.5], dtick=1, fixedrange=True, showgrid=False),
-        yaxis=dict(range=[vmin, vmax], dtick=1, fixedrange=True, showgrid=True, gridcolor='LightGray'),
+        yaxis=dict(range=[vmin, vmax], dtick=1, fixedrange=True, showgrid=True, gridcolor='rgba(211, 211, 211, 0.3)'),
         showlegend=False,
         plot_bgcolor='white',
         paper_bgcolor='white',

@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import datetime
 import common as ui
 import data_processing as dp
-from curve_editor import show_curve_plot, show_curve_controls, get_interpolated_curve_lut
+from curve_editor import show_curve_plot, show_curve_controls, get_interpolated_curve_lut, render_body_silhouette
 
 ui.apply_base_ui("Configure Your Mattress")
 
@@ -19,7 +19,7 @@ st.session_state.setdefault("current_configure_sleeper", "Sleeper 1")
 st.session_state.setdefault("sleeper_1_on_left", True)
 
 #Column Layout
-col1, col2 = st.columns([2, 1])
+col1, col2 = st.columns([3, 1])
 
 # Render controls first (col2) to ensure updates happen before plot
 with col2:
@@ -80,7 +80,7 @@ with col2:
     selected_bed = st.selectbox(
         "Bed size",
         options=list(dp.BED_SIZES.keys()),
-        index=list(dp.BED_SIZES.keys()).index(st.session_state.get("bed_size", "Queen")),
+        index=list(dp.BED_SIZES.keys()).index(st.session_state.get("bed_size", "King")),
         label_visibility="collapsed",
         key="bed_size_selector",
         on_change=lambda: dp.set_bed_size(st.session_state.bed_size_selector)
@@ -324,6 +324,9 @@ with col1:
 
     curve_cols = st.columns([10, 1])
     with curve_cols[0]:
+        # Render body silhouette overlay (positioned above curve plot)
+        render_body_silhouette(side_key=side_key, height=200)
+        # Render curve plot
         show_curve_plot(side_key=side_key, height=200, width=None)
 
 st.markdown("---")

@@ -29,7 +29,7 @@ with col_left:
         downsampled = dp.downsample_pressure_map(existing_data['sensel_data'], target_shape=(17, 9))
 
         # Display the downsampled pressure map heatmap
-        dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto")
+        dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto", colorscale="OrRd")
         
         # Show uploaded file info and delete button
         st.write(f"**Files:** {', '.join(existing_data['filenames'])}")
@@ -109,9 +109,7 @@ with col_right:
             downsampled = dp.downsample_pressure_map(existing_data['sensel_data'], target_shape=(17, 9))
 
             # Display the downsampled pressure map heatmap
-            dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto")
-            
-            # Show uploaded file info and delete button
+            dp.draw_pixel_map(downsampled, width=300, show_values=True, value_range="auto", colorscale="OrRd")         # Show uploaded file info and delete button
             st.write(f"**Files:** {', '.join(existing_data['filenames'])}")
             
             if st.button("Delete and Re-upload", key="delete_right", use_container_width=True):
