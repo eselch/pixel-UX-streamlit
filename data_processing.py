@@ -859,7 +859,7 @@ def draw_pixel_map(
         # Wrap the plotly chart in HTML with CSS 3D transform for perspective effect
         # First rotate 90 degrees, then apply 35 degree perspective tilt
         html_wrapper = f'''
-        <div style="perspective: 1200px; width: 100%; display: flex; justify-content: center; margin: 20px 0;">
+        <div style="perspective: 1200px; width: 100%; display: flex; justify-content: center; margin: -40px 0 20px 0;">
             <div id="pixel-map-container" style="transform: rotateZ(-90deg) rotateX(35deg); transform-origin: center center; transform-style: preserve-3d;">
         '''
         st.markdown(html_wrapper, unsafe_allow_html=True)

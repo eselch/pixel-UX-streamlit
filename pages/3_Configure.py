@@ -23,6 +23,9 @@ col1, col2 = st.columns([3, 1])
 
 # Render controls first (col2) to ensure updates happen before plot
 with col2:
+
+    st.subheader("Pixel Configuration Map")
+    
     # Sleeper selection
     sleepers_available = []
     if st.session_state.answers.get("sleeper_1"):
@@ -312,22 +315,21 @@ with col1:
         [1.0, "#0A2734"]
     ]
 
-    # Center the heatmap and curve plot using Streamlit column layout (works on Cloud)
-    heatmap_cols = st.columns([10, 1])
-    with heatmap_cols[0]:
-        dp.draw_pixel_map(
-            pixel_map_2d,
-            height=500,
-            colorscale=custom_colorscale,
-            title=heatmap_title,
-        )
+    st.subheader("Pixel Configuration Map")
 
-    curve_cols = st.columns([10, 1])
-    with curve_cols[0]:
-        # Render body silhouette overlay (positioned above curve plot)
-        render_body_silhouette(side_key=side_key, height=200)
-        # Render curve plot
-        show_curve_plot(side_key=side_key, height=200, width=None)
+    dp.draw_pixel_map(
+        pixel_map_2d,
+        height=500,
+        colorscale=custom_colorscale,
+        title=heatmap_title,
+    )
+
+    st.subheader("Support Curve")
+
+    # Render body silhouette overlay (positioned above curve plot)
+    render_body_silhouette(side_key=side_key, height=200)
+    # Render curve plot
+    show_curve_plot(side_key=side_key, height=200, width=None)
 
 st.markdown("---")
 
