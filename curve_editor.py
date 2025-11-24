@@ -169,10 +169,10 @@ def render_body_silhouette(
     for idx, image_data_uri in enumerate(images_to_render):
         # Layer multiple images with slightly different opacity for visual distinction
         opacity = 0.3 if len(images_to_render) == 1 else 0.25 + (idx * 0.05)
-        img_tags += f'<img src="{image_data_uri}" style="position: absolute; left: calc(60px + {left_percent:.4f}% * (100% - 80px) / 100%); top: 0px; width: calc({width_percent:.4f}% * (100% - 80px) / 100%); height: 100%; object-fit: contain; object-position: center; opacity: {opacity:.2f}; pointer-events: none; z-index: {1000 + idx};"/>'
+        img_tags += f'<img src="{image_data_uri}" style="position: absolute; left: calc(60px + {left_percent:.4f}% * (100% - 80px) / 100%); top: 0px; width: calc({width_percent:.4f}% * (100% - 60px) / 100%); height: 100%; object-fit: contain; object-position: center; opacity: {opacity:.2f}; pointer-events: none; z-index: {1000 + idx};"/>'
     
     # Container sits above the chart with negative margins to reduce spacing
-    html_content = f'<div style="position: relative; width: 100%; height: {height}px; margin-top: -40px; margin-bottom: -80px; pointer-events: none;">{img_tags}</div>'
+    html_content = f'<div style="position: relative; width: 100%; height: {height}px; margin-top: -40px; margin-bottom: -50px; pointer-events: none;">{img_tags}</div>'
     
     st.markdown(html_content, unsafe_allow_html=True)
 
