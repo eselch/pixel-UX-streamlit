@@ -19,7 +19,7 @@ st.session_state.setdefault("current_configure_sleeper", "Sleeper 1")
 st.session_state.setdefault("sleeper_1_on_left", True)
 
 #Column Layout
-col1, col2 = st.columns([3, 1])
+col1, col2 = st.columns([2, 1])
 
 # Render controls first (col2) to ensure updates happen before plot
 with col2:
