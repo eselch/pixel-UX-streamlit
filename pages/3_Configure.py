@@ -336,6 +336,9 @@ st.markdown("---")
 def go_prev():
     st.switch_page("pages/2_Mapping.py")
 
+def go_sandbox():
+    st.switch_page("pages/4_Pixel_Sandbox.py")
+
 def export_data():
     """Export the current configuration data as PDF."""
     try:
@@ -364,4 +367,17 @@ def export_data():
     except Exception as e:
         st.error(f"An error occurred during export: {str(e)}")
 
-ui.nav_row(left_label="PREVIOUS", left_action=go_prev, right_label="EXPORT", right_action=export_data)
+# Bottom navigation with three buttons
+col_prev, col_sandbox, col_export = st.columns([1, 1, 1])
+
+with col_prev:
+    if st.button("← PREVIOUS", key="nav_prev", use_container_width=True):
+        go_prev()
+
+with col_sandbox:
+    if st.button("TO SANDBOX →", key="nav_sandbox", use_container_width=True):
+        go_sandbox()
+
+with col_export:
+    if st.button("EXPORT", key="nav_export", use_container_width=True):
+        export_data()
