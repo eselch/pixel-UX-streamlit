@@ -12,7 +12,7 @@ def apply_base_ui(title: str = ""):
 
     # logo (top-right) — optional, ignore errors if missing
     try:
-        st.image("primary-logo.svg", width=110, caption=None)
+        st.image("Lovesac-Logo-Alpha-Proto_1.svg", width=150, caption=None)
     except Exception:
         pass
 
@@ -65,11 +65,13 @@ def apply_base_ui(title: str = ""):
         }
         h1 {
             font-size: 40px !important;
-            margin-bottom: 0.1rem !important;
+            margin-bottom: -1rem !important;
+            padding-bottom: 0 !important;
             font-weight: 250 !important;
         }
         h2 {
             font-size: 20px !important;
+            margin-top: 0 !important;
             margin-bottom: 0.25rem !important;
             font-weight: 700 !important;
             text-align: center !important;
@@ -77,8 +79,17 @@ def apply_base_ui(title: str = ""):
         h3 {
             font-size: 20px !important;
             font-weight: 350 !important;
+            margin-top: 0 !important;
             margin-bottom: 0.2rem !important;
-
+        }
+        /* Reduce spacing after title block */
+        .stMarkdown, [data-testid="stMarkdownContainer"] {
+            margin-bottom: 0 !important;
+        }
+        /* Target the block after h1 */
+        h1 + div, h1 ~ div:first-of-type {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
         }
     </style>
     """, unsafe_allow_html=True)

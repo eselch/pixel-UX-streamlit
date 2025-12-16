@@ -430,7 +430,7 @@ def show_curve_controls(
     ys = np.round(ys_float).astype(int)
     ys = np.clip(ys, vmin, vmax)
     
-    st.subheader("Firmness Tuning")
+    st.write("Support Tuning")
 
     # Get base firmness to calculate offsets (only used for display in manual mode)
     base_firmness = st.session_state.answers.get(side_key, {}).get("firmness_value", 2)

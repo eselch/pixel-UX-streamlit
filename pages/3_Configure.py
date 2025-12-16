@@ -24,7 +24,7 @@ col1, col2 = st.columns([2, 1])
 # Render controls first (col2) to ensure updates happen before plot
 with col2:
 
-    st.subheader("Pixel Configuration Map")
+    st.write("Mattress Configuration Controls")
     
     # Sleeper selection
     sleepers_available = []
@@ -315,7 +315,7 @@ with col1:
         [1.0, "#0A2734"]
     ]
 
-    st.subheader("Pixel Configuration Map")
+    st.write("Configurable Pixel Map")
 
     dp.draw_pixel_map(
         pixel_map_2d,
@@ -324,7 +324,7 @@ with col1:
         title=heatmap_title,
     )
 
-    st.subheader("Support Curve")
+    st.write("Support Profile")
 
     # Render body silhouette overlay (positioned above curve plot)
     render_body_silhouette(side_key=side_key, height=200)
