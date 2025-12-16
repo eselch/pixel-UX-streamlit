@@ -7,6 +7,8 @@ from color_grid_component import render_color_grid
 
 ui.apply_base_ui("Pixel Sandbox")
 
+st.write("Click and drag to select pixels and change their firmness")
+
 # Initialize session state if not already done
 if "answers" not in st.session_state:
     st.session_state.answers = {"sleeper_1": {}, "sleeper_2": {}}
