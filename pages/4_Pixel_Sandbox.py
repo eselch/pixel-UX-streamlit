@@ -123,17 +123,31 @@ def apply_pixel_assortment():
     st.session_state.sandbox_pixel_grid_modified = grid
 
 
-# Track the bed size to detect changes
-current_bed_size = st.session_state.get("bed_size", "King")
+def get_master_arrays_signature() -> str:
+    """Generate a signature of the current master arrays to detect changes."""
+    sleeper_1_array = st.session_state.answers.get("sleeper_1", {}).get("master_array", [])
+    sleeper_2_array = st.session_state.answers.get("sleeper_2", {}).get("master_array", [])
+    show_right = st.session_state.get("show_right", False)
+    sleeper_1_on_left = st.session_state.get("sleeper_1_on_left", True)
+    # Create a hashable signature from the arrays and configuration
+    return f"{tuple(sleeper_1_array)}_{tuple(sleeper_2_array)}_{show_right}_{sleeper_1_on_left}"
 
-# Initialize or rebuild the sandbox grid if bed size changed
+
+# Track the bed size and master arrays to detect changes
+current_bed_size = st.session_state.get("bed_size", "King")
+current_master_signature = get_master_arrays_signature()
+
+# Initialize or rebuild the sandbox grid if bed size or master arrays changed
 if "sandbox_pixel_grid_modified" not in st.session_state:
     st.session_state.sandbox_pixel_grid_modified = build_pixel_map_from_configure()
     st.session_state.sandbox_last_bed_size = current_bed_size
-elif st.session_state.get("sandbox_last_bed_size") != current_bed_size:
-    # Bed size changed - rebuild the grid
+    st.session_state.sandbox_last_master_signature = current_master_signature
+elif (st.session_state.get("sandbox_last_bed_size") != current_bed_size or 
+      st.session_state.get("sandbox_last_master_signature") != current_master_signature):
+    # Bed size or master arrays changed - rebuild the grid
     st.session_state.sandbox_pixel_grid_modified = build_pixel_map_from_configure()
     st.session_state.sandbox_last_bed_size = current_bed_size
+    st.session_state.sandbox_last_master_signature = current_master_signature
 
 # Use the modified grid (persists user changes)
 sandbox_pixel_grid = st.session_state.sandbox_pixel_grid_modified
