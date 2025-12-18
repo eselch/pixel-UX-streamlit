@@ -52,7 +52,16 @@ def get_interpolated_curve_lut(side_key: str) -> np.ndarray:
     sleeper_data = st.session_state.answers.get(side_key, {})
     master_array = sleeper_data.get("master_array")
     if master_array is not None:
-        return np.array(master_array, dtype=int)
+        arr = np.array(master_array, dtype=int)
+        # Ensure array matches expected bed length
+        if len(arr) != bed_length:
+            # Resize array to match bed length
+            if len(arr) > bed_length:
+                arr = arr[:bed_length]
+            else:
+                # Pad with the last value
+                arr = np.pad(arr, (0, bed_length - len(arr)), mode='edge')
+        return arr
     # Fallback to firmness-based default
     firmness = sleeper_data.get("firmness_value", 2)
     return dp.initialize_master_array(side_key, firmness, array_length=bed_length)
@@ -81,6 +90,14 @@ def build_pixel_map_from_configure() -> np.ndarray:
 
         if left_lut is None or right_lut is None:
             return np.full((bed_length, total_width), 2, dtype=int)
+
+        # Ensure both arrays have the same length
+        if len(left_lut) != len(right_lut):
+            target_len = max(len(left_lut), len(right_lut))
+            if len(left_lut) < target_len:
+                left_lut = np.pad(left_lut, (0, target_len - len(left_lut)), mode='edge')
+            if len(right_lut) < target_len:
+                right_lut = np.pad(right_lut, (0, target_len - len(right_lut)), mode='edge')
 
         return dp.pixel_map_dual_sleeper(left_lut, right_lut, width_per_sleeper)
     else:
