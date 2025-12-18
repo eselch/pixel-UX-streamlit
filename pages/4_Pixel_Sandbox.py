@@ -169,6 +169,9 @@ sleeper_1_name = st.session_state.answers.get("sleeper_1", {}).get("setting1", "
 sleeper_2_name = st.session_state.answers.get("sleeper_2", {}).get("setting1", "Sleeper 2")
 screenshot_subtitle = f"{sleeper_1_name} and {sleeper_2_name}"
 
+# Get bed size for export
+export_bed_size = st.session_state.get("bed_size", "King")
+
 # Convert numpy array to list of lists for the component
 initial_grid = sandbox_pixel_grid.tolist()
 
@@ -181,6 +184,7 @@ render_color_grid(
     spacing=2,
     session_key="sandbox_pixel_grid_state",
     screenshot_subtitle=screenshot_subtitle,
+    bed_size=export_bed_size,
     cell_border="1px solid #333",
     selected_border="2px solid #FFD54F",
     selected_shadow="0 0 0 2px #FFD54F",

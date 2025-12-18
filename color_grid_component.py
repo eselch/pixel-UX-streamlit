@@ -34,6 +34,7 @@ def render_color_grid(
     spacing: int = 4,
     session_key: str = "color_grid",
     screenshot_subtitle: str = "Sleepers 1 and 2",
+    bed_size: str = "King",
     # CSS customization
     font_family: str = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     cell_border: str = "2px solid #888",
@@ -103,6 +104,7 @@ def render_color_grid(
     colors_json = json.dumps(colors)
     color_names_json = json.dumps(color_names)
     screenshot_subtitle_json = json.dumps(screenshot_subtitle)
+    bed_size_json = json.dumps(bed_size)
 
     # Build HTML/CSS/JS
     html_code = f"""
@@ -267,7 +269,7 @@ def render_color_grid(
         <button class="cg-clear-btn" id="cgPixelAssortment" style="margin-top: 16px;">Add Pixel Assortment</button>
         <button class="cg-clear-btn" id="cgAddBundle" style="margin-top: 8px;">+ Add Bundle</button>
         <button class="cg-clear-btn" id="cgRemoveBundle" style="margin-top: 4px;">- Remove Bundle</button>
-        <button class="cg-clear-btn" id="cgCaptureScreenshot" style="margin-top: 16px; background-color: #0492a8; color: white;">📷 Capture Screenshot</button>
+        <button class="cg-clear-btn" id="cgCaptureScreenshot" style="margin-top: 16px; background-color: #0492a8; color: white;">� Export</button>
         <div class="cg-bundles-container" id="cgBundlesContainer">
             <div class="cg-bundles-label">Bundles:</div>
         </div>
@@ -459,7 +461,7 @@ def render_color_grid(
             
             // Create a new canvas with padding and title
             const padding = 80;
-            const titleHeight = 80;
+            const titleHeight = 100;
             const newCanvas = document.createElement('canvas');
             newCanvas.width = canvas.width + (padding * 2);
             newCanvas.height = canvas.height + (padding * 2) + titleHeight;
@@ -469,17 +471,27 @@ def render_color_grid(
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, newCanvas.width, newCanvas.height);
             
-            // Draw title
+            // Format date and time
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en-US', {{ year: 'numeric', month: 'long', day: 'numeric' }});
+            const timeStr = now.toLocaleTimeString('en-US', {{ hour: '2-digit', minute: '2-digit' }});
+            
+            // Draw title with bed size
             ctx.fillStyle = '#333333';
             ctx.font = 'bold 32px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText('Pixel Sandbox', padding, padding + 30);
+            ctx.fillText('Pixel Sandbox - ' + {bed_size_json}, padding, padding + 30);
             
-            // Draw subtitle
+            // Draw subtitle (sleeper names)
             ctx.fillStyle = '#666666';
             ctx.font = '20px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif';
             ctx.textAlign = 'left';
             ctx.fillText({screenshot_subtitle_json}, padding, padding + 60);
+            
+            // Draw date and time
+            ctx.fillStyle = '#999999';
+            ctx.font = '16px -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif';
+            ctx.fillText(dateStr + ' at ' + timeStr, padding, padding + 85);
             
             // Draw the captured content
             ctx.drawImage(canvas, padding, padding + titleHeight);
@@ -494,17 +506,17 @@ def render_color_grid(
             link.click();
             
             // Visual feedback
-            captureBtn.textContent = '✓ Captured!';
+            captureBtn.textContent = '✓ Exported!';
             captureBtn.style.backgroundColor = '#28a745';
             setTimeout(function() {{
-                captureBtn.textContent = '📷 Capture Screenshot';
+                captureBtn.textContent = '📤 Export';
                 captureBtn.style.backgroundColor = '#0492a8';
             }}, 2000);
         }}).catch(function(err) {{
-            console.error('Screenshot failed:', err);
+            console.error('Export failed:', err);
             captureBtn.textContent = '❌ Failed';
             setTimeout(function() {{
-                captureBtn.textContent = '📷 Capture Screenshot';
+                captureBtn.textContent = '📤 Export';
             }}, 2000);
         }});
     }});
